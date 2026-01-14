@@ -59,7 +59,7 @@ export default class ChatList {
 
   async fetch_and_setup_rooms() {
     try {
-      const res = await get_rooms(this.user_email);
+      const res = await get_rooms();
       this.rooms = res;
       this.setup_rooms();
       this.render_messages();

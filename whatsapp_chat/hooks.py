@@ -60,6 +60,9 @@ app_include_js = ['whatsapp_chat.bundle.js'] if is_frappe_above_v13 else [
 
 # Generators
 # ----------
+# automatically create page for each record of this doctype
+# This makes python type annotations available
+export_python_type_annotations = True
 
 # automatically create page for each record of this doctype
 # website_generators = ["Web Page"]
@@ -77,7 +80,7 @@ app_include_js = ['whatsapp_chat.bundle.js'] if is_frappe_above_v13 else [
 # ------------
 
 # before_install = "whatsapp_chat.install.before_install"
-# after_install = "whatsapp_chat.install.after_install"
+after_install = "whatsapp_chat.install.after_install"
 
 # Uninstallation
 # ------------

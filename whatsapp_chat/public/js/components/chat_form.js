@@ -1,4 +1,3 @@
-import { create_guest } from './chat_utils';
 import ChatSpace from './chat_space';
 
 export default class ChatForm {
@@ -79,7 +78,6 @@ export default class ChatForm {
   async validate_form() {
     try {
       const form_values = this.get_values();
-      const res = await create_guest(form_values);
 
       if (!res) {
         return;

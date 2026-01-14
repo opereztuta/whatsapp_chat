@@ -60,8 +60,7 @@ export default class ChatSpace {
   async fetch_and_setup_messages() {
     try {
       const res = await get_messages(
-        this.profile.room,
-        this.profile.user_email
+        this.profile.room
       );
       this.setup_messages(res);
       this.setup_actions();
@@ -93,12 +92,7 @@ export default class ChatSpace {
     this.message_html = ``;
     if (this.profile.message) {
       messages_list.push(this.profile.message);
-      send_message(
-        this.profile.message.content,
-        this.profile.user,
-        this.profile.room,
-        this.profile.user_email
-      );
+      send_message(this.profile.message.content, this.profile.room, null);
     }
     messages_list.forEach((element) => {
       const date_line_html = this.make_date_line_html(element.creation);
@@ -434,9 +428,7 @@ export default class ChatSpace {
     scroll_to_bottom(this.$chat_space_container);
     send_message(
       content,
-      this.profile.user,
       this.profile.room,
-      this.profile.user_email,
       attachment
     );
   }
