@@ -1,93 +1,66 @@
 import frappe
+from whatsapp_chat.api.auth import can_access_chat
 
 
 @frappe.whitelist(allow_guest=True)
-def settings(token):
-    """Fetch and return the settings for a chat session
+def settings(token=None):  # token kept only for backward-compat with JS calls
+    user = frappe.session.user
 
-    Args:
-        token (str): Guest token.
-
-    """
+    # Base config (safe for both System Users and Guests)
     config = {
-        'socketio_port': frappe.conf.socketio_port,
-        'user_email': frappe.session.user,
-        'is_admin': True if 'user_type' in frappe.session.data else False,
-        'guest_title': ''.join(frappe.get_hooks('guest_title')),
+        "socketio_port": frappe.conf.socketio_port,
+        "user_email": user,
+        "is_admin": False,
+        "can_access_ui": False,
+        "guest_title": "".join(frappe.get_hooks("guest_title")),
+        "is_verified": False,
+        "user": "Guest",
     }
 
-    config = {**config, **get_chat_settings()}
+    # HARD BLOCK: Guests never get chat UI
+    if user == "Guest":
+        config.update({
+            "enable_chat": False,
+            "chat_status": "Offline",
+        })
+        return config
 
-    if config['is_admin']:
-        config['user'] = get_admin_name(config['user_email'])
-        config['user_settings'] = get_user_settings()
-    else:
-        config['user'] = 'Guest'
-        token_verify = validate_token(token)
-        if token_verify[0] is True:
-            config['room'] = token_verify[1]['room']
-            config['user_email'] = token_verify[1]['email']
-            config['is_verified'] = True
-        else:
-            config['is_verified'] = False
+    # System User / Desk logic
+    user_type = frappe.db.get_value("User", user, "user_type")
+    is_system_user = (user_type == "System User")
+    can_access_ui = is_system_user and can_access_chat(user)
+
+    config["is_admin"] = can_access_ui
+    config["can_access_ui"] = can_access_ui
+
+    # Merge chat settings (only relevant for authenticated users)
+    config.update(get_chat_settings())
+
+    if config["is_admin"]:
+        config["user"] = get_admin_name(user)
+        config["user_settings"] = get_user_settings()
 
     return config
 
 
 def get_admin_name(user_key):
     """Get the admin name for specified user key"""
-    full_name = frappe.db.get_value('User', user_key, 'full_name')
-    return full_name
+    return frappe.db.get_value("User", user_key, "full_name")
+
 
 def get_chat_settings():
-    """Get the chat settings
-    Returns:
-        dict: Dictionary containing chat settings.
     """
-    # chat_settings = frappe.get_cached_doc('Chat Settings')
-    # user_roles = frappe.get_roles()
-
-    # allowed_roles = [u.role for u in chat_settings.allowed_roles]
-    # allowed_roles.extend(['System Manager', 'Administrator'])
-    result = {
-        'enable_chat': False
+    Chat settings for authenticated users only.
+    (If you want to disable it for non-agents too, you can do it here.)
+    """
+    return {
+        "enable_chat": True,
+        "chat_status": "Online",
     }
 
-    # if frappe.session.user == 'Guest':
-    #     result['enable_chat'] = True
-
-    # if not chat_settings.enable_chat or not has_common(allowed_roles, user_roles):
-    #     return result
-
-    # chat_settings.chat_operators = [co.user for co in chat_settings.chat_operators]
-
-    # if chat_settings.start_time and chat_settings.end_time:
-    #     start_time = datetime.time.fromisoformat(chat_settings.start_time)
-    #     end_time = datetime.time.fromisoformat(chat_settings.end_time)
-    #     current_time = datetime.datetime.now().time()
-
-    #     chat_status = 'Online' if time_in_range(
-    #         start_time, end_time, current_time) else 'Offline'
-    # else:
-    #     chat_status = 'Online'
-
-    result['enable_chat'] = True
-    result['chat_status'] = "Online"
-    return result
 
 def get_user_settings():
-    """Get the user settings
-
-    Returns:
-        dict: user settings
-    """
-    # if frappe.db.exists('Chat User Settings', frappe.session.user):
-    #     user_doc = frappe.db.get_value('Chat User Settings', frappe.session.user, [
-    #         'enable_message_tone', 'enable_notifications'], as_dict=1)
-    # else:
-    user_doc = {
-        'enable_message_tone': 1,
-        'enable_notifications': 1
+    return {
+        "enable_message_tone": 1,
+        "enable_notifications": 1,
     }
-
-    return user_doc

@@ -6,16 +6,30 @@ from frappe.model.document import Document
 
 
 class WhatsAppContact(Document):
+    # begin: auto-generated types
+    # This code is auto-generated. Do not modify anything in this block.
 
-	def after_insert(self):
-		if self.email:
-			frappe.publish_realtime(
-				"new_room_creation", 
-				{
-					"user": self.email,  
-					"room_name": self.contact_name
-				}, 
-				user=self.email
-			)
+    from typing import TYPE_CHECKING
 
-	pass
+    if TYPE_CHECKING:
+        from frappe.types import DF
+
+        contact_name: DF.Data | None
+        email: DF.Link | None
+        is_read: DF.Check
+        last_message: DF.LongText | None
+        mobile_no: DF.Data
+    # end: auto-generated types
+
+    def after_insert(self):
+        if self.email:
+            frappe.publish_realtime(
+                "new_room_creation",
+                {
+                    "user": self.email,
+                    "room_name": self.contact_name
+                },
+                user=self.email
+            )
+
+    pass

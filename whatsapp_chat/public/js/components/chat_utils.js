@@ -45,46 +45,37 @@ function is_image(filename) {
   return true;
 }
 
-async function get_rooms(email) {
+async function get_rooms() {
   const res = await frappe.call({
     type: 'GET',
     method: 'whatsapp_chat.api.contacts.get',
-    args: {
-      email: email,
-    },
+    args: {},
   });
   return await res.message;
 }
 
-async function get_messages(room, user_no) {
+async function get_messages(room) {
   const res = await frappe.call({
     method: 'whatsapp_chat.api.message.get_all',
-    args: {
-      room: room,
-      user_no: user_no,
-    },
+    args: { room },
   });
   return await res.message;
 }
 
-async function send_message(content, user, room, user_no, attachment) {
+async function send_message(content, room, attachment) {
   try {
     await frappe.call({
       method: 'whatsapp_chat.api.message.send',
-      args: {
-        content: content,
-        user: user,
-        room: room,
-        user_no: user_no,
-        attachment: attachment
-      },
+      args: { room, content, attachment: attachment || null },
     });
   } catch (error) {
     frappe.msgprint({
       title: __('Error'),
       message: __('Something went wrong. Please refresh and try again.'),
+      indicator: 'red',
     });
   }
+  
 }
 
 async function get_settings(token) {

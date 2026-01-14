@@ -1,50 +1,71 @@
 import frappe
 import mimetypes
+from whatsapp_chat.api.auth import require_contact_access
+from whatsapp_chat.whatsapp_chat.doctype.whatsapp_contact.whatsapp_contact \
+        import WhatsAppContact
+from frappe_whatsapp.frappe_whatsapp.doctype.whatsapp_message.whatsapp_message \
+        import WhatsAppMessage
+from typing import cast
+from frappe.utils import now
 
+
+IMG_FILE_TYPES = [
+    "image/apng", "image/avif", "image/gif", "image/jpeg",
+    "image/png", "image/svg", "image/webp"]
+
+DOC_FILE_TYPES = [
+    "application/pdf", "application/vnd.ms-powerpoint",
+    "application/msword", "application/vnd.ms-excel",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    ("application/vnd.openxmlformats-officedocument." +
+     "presentationml.presentation"),
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"]
+
+AUDIO_FILE_TYPES = [
+    "audio/aac", "audio/mp4", "audio/mpeg", "audio/amr", "audio/ogg"]
 
 
 @frappe.whitelist()
-def get_all(room: str, user_no: str):
-    """Get all the messages of a particular room
+def get_all(room: str):
+    """Get all messages for a room (WhatsApp Contact name)."""
+    require_contact_access(room)
 
-    Args:
-        room (str): Room's name.
+    contact = cast(
+        WhatsAppContact,
+        frappe.get_doc("WhatsApp Contact", room))
 
-    """
+    user_no = contact.mobile_no  # authoritative
+
     return frappe.db.sql("""
         SELECT creation,
         case
-            when `to` <> '' then `to`
-            else
-            'Administrator'
+          when `to` <> '' then `to`
+          else
+          'Administrator'
         end as sender_user_no,
         case
-            when COALESCE(content_type, 'text') = 'text' then COALESCE(message, '')
-            else COALESCE(attach, message, '')
+          when COALESCE(content_type,'text') = 'text' then COALESCE(message,'')
+          else COALESCE(attach, message, '')
         end as content,
         case
-            when COALESCE(content_type, 'text') <> 'text' then message
-            else NULL
+          when COALESCE(content_type, 'text') <> 'text' then message
+          else NULL
         end as caption,
         COALESCE(content_type, 'text') as content_type
-        from `tabWhatsApp Message` where (`to` = %(user_no)s or `from` = %(user_no)s)
-        AND COALESCE(message_type, '') <> 'Template'
+        from `tabWhatsApp Message`
+        where (`to` = %(user_no)s or `from` = %(user_no)s)
+          AND COALESCE(message_type, '') <> 'Template'
         order by creation asc
     """, {"user_no": user_no}, as_dict=True)
 
 
 @frappe.whitelist()
-def mark_as_read(room):
-    """Mark messages as read in local DB and optionally send read receipts to WhatsApp."""
-    try:
-        # Update local contact status
-        frappe.db.set_value("WhatsApp Contact", room, "is_read", 1, update_modified=False)
-        frappe.db.commit()
-
-        # Send read receipts to WhatsApp if enabled
-        send_whatsapp_read_receipts(room)
-    except Exception:
-        pass  # Ignore concurrent update errors
+def mark_as_read(room: str):
+    require_contact_access(room)
+    frappe.db.set_value(
+        "WhatsApp Contact", room, "is_read", 1, update_modified=False)
+    frappe.db.commit()
+    send_whatsapp_read_receipts(room)
     return "ok"
 
 
@@ -52,7 +73,10 @@ def send_whatsapp_read_receipts(room):
     """Send read receipts to WhatsApp for unread incoming messages."""
     try:
         # Get the contact's mobile number
-        contact = frappe.get_doc("WhatsApp Contact", room)
+        contact = cast(
+            WhatsAppContact,
+            frappe.get_doc("WhatsApp Contact", room))
+
         if not contact.mobile_no:
             return
 
@@ -85,26 +109,40 @@ def send_whatsapp_read_receipts(room):
 
             if allow_auto_read:
                 try:
-                    msg_doc = frappe.get_doc("WhatsApp Message", msg.name)
+                    msg_doc = cast(
+                        WhatsAppMessage,
+                        frappe.get_doc("WhatsApp Message", msg.name))
                     msg_doc.send_read_receipt()
                 except Exception as e:
-                    frappe.log_error(f"Failed to send read receipt for {msg.name}: {str(e)}", "WhatsApp Chat Read Receipt")
+                    frappe.log_error(
+                        ("Failed to send read receipt "
+                         f"for {msg.name}: {str(e)}"),
+                        "WhatsApp Chat Read Receipt")
     except Exception as e:
-        frappe.log_error(f"send_whatsapp_read_receipts error: {str(e)}", "WhatsApp Chat Read Receipt")
-
+        frappe.log_error(
+            f"send_whatsapp_read_receipts error: {str(e)}",
+            "WhatsApp Chat Read Receipt")
 
 
 @frappe.whitelist()
-def send(content, user, room, user_no, attachment=None):
+def send(room: str, content: str, attachment: str | None = None):
+    """Send a message to the room contact."""
+    require_contact_access(room)
+
+    contact = cast(
+        WhatsAppContact,
+        frappe.get_doc("WhatsApp Contact", room))
+    user_no = contact.mobile_no
+
     content_type = "text"
     if attachment:
-        file_type = mimetypes.guess_type(content)[0]
-        if file_type in ["image/apng","image/avif","image/gif","image/jpeg","image/png","image/svg","image/webp"]:
-            content_type = 'image'
-        elif file_type in ["application/pdf", "application/vnd.ms-powerpoint", "application/msword", "application/vnd.ms-excel", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "application/vnd.openxmlformats-officedocument.presentationml.presentation", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"]:
+        file_type = mimetypes.guess_type(attachment)[0]
+        if file_type in IMG_FILE_TYPES:
+            content_type = "image"
+        elif file_type in DOC_FILE_TYPES:
             content_type = "document"
-        elif file_type in ["audio/aac", "audio/mp4", "audio/mpeg", "audio/amr", "audio/ogg"]:
-            content_type = 'audio'
+        elif file_type in AUDIO_FILE_TYPES:
+            content_type = "audio"
         elif file_type in ["video/mp4", "video/3gp"]:
             content_type = "video"
 
@@ -112,17 +150,18 @@ def send(content, user, room, user_no, attachment=None):
             "doctype": "WhatsApp Message",
             "to": user_no,
             "type": "Outgoing",
-            "attach": content,
-            "content_type": content_type
-        }).save()
+            "attach": attachment,
+            "message": content or "",     # caption support
+            "content_type": content_type,
+        }).insert(ignore_permissions=False)
     else:
         frappe.get_doc({
             "doctype": "WhatsApp Message",
             "to": user_no,
             "type": "Outgoing",
             "message": content,
-            "content_type": content_type
-        }).save()
+            "content_type": content_type,
+        }).insert(ignore_permissions=False)
 
     return "ok"
 
@@ -133,27 +172,32 @@ def last_message(doc, method):
     else:
         mobile_no = doc.get("from")
 
-
-    contact_name = frappe.db.get_value("WhatsApp Contact", filters={"mobile_no": mobile_no})
+    contact_name = frappe.db.get_value(
+        "WhatsApp Contact", filters={"mobile_no": mobile_no})
     if contact_name:
-        chat_doc = frappe.get_doc("WhatsApp Contact", contact_name)
+        chat_doc = cast(
+            WhatsAppContact,
+            frappe.get_doc("WhatsApp Contact", str(contact_name))
+        )
         chat_doc.last_message = doc.message
         chat_doc.is_read = 0
         chat_doc.save(ignore_permissions=True)
     else:
-        chat_doc = frappe.get_doc({
-            "doctype": "WhatsApp Contact",
-            "mobile_no": mobile_no,
-            "last_message": doc.message,
-            "contact_name": mobile_no,
-            "is_read": 0
-        })
+        chat_doc = cast(
+            WhatsAppContact,
+            frappe.get_doc({
+                "doctype": "WhatsApp Contact",
+                "mobile_no": mobile_no,
+                "last_message": doc.message,
+                "contact_name": mobile_no,
+                "is_read": 0
+            }))
         chat_doc.save(ignore_permissions=True)
 
     if chat_doc.email and doc.type != 'Outgoing':
         message_data = {
             "content": doc.message or doc.attach or '',
-            "creation": frappe.utils.now(),
+            "creation": now(),
             "room": chat_doc.name,
             "contact_name": chat_doc.contact_name,
             "sender_user_no": mobile_no,

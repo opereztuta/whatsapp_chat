@@ -60,8 +60,7 @@ export default class ChatSpace {
   async fetch_and_setup_messages() {
     try {
       const res = await get_messages(
-        this.profile.room,
-        this.profile.user_email
+        this.profile.room
       );
       this.setup_messages(res);
       this.setup_actions();
@@ -434,9 +433,7 @@ export default class ChatSpace {
     scroll_to_bottom(this.$chat_space_container);
     send_message(
       content,
-      this.profile.user,
       this.profile.room,
-      this.profile.user_email,
       attachment
     );
   }
