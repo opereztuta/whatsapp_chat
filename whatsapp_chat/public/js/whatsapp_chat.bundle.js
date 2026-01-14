@@ -5,7 +5,6 @@ import {
   ChatBubble,
   ChatList,
   ChatSpace,
-  ChatWelcome,
   get_settings,
   scroll_to_bottom,
 } from './components';
@@ -61,17 +60,24 @@ frappe.Chat = class {
   /** Load dependencies and fetch the settings */
   async setup_app() {
     try {
-      const token = localStorage.getItem('guest_token') || '';
-      const res = await get_settings(token);
-      this.is_admin = res.is_admin;
       this.is_desk = 'desk' in frappe;
+
+      // Hard stop: never run guest/website chat
+      if (!this.is_desk && frappe.session && frappe.session.user === 'Guest') {
+        return;
+      }
+
+      const res = await get_settings();
+
+      this.is_admin = res.is_admin;
 
       // If desk user but NOT allowed, do nothing (no UI)
       if (this.is_desk && !res.can_access_ui) {
         return;
       }
 
-      if (res.enable_chat === false || (!this.is_desk && this.is_admin)) {
+      // Only allow chat when explicitly enabled by server (authorized desk users)
+      if (res.enable_chat === false) {
         return;
       }
 
@@ -82,39 +88,14 @@ frappe.Chat = class {
       frappe.Chat.settings.user = res.user_settings;
       frappe.Chat.settings.unread_count = 0;
 
-      if (res.is_admin) {
-        // If the user is admin, render everthing
-        this.chat_list = new ChatList({
-          $wrapper: this.$chat_container,
-          user: res.user,
-          user_email: res.user_email,
-          is_admin: res.is_admin,
-        });
-        this.chat_list.render();
-      } else if (res.is_verified) {
-        // If the token and ip address matches, directly render the chat space
-        this.chat_space = new ChatSpace({
-          $wrapper: this.$chat_container,
-          profile: {
-            room_name: res.guest_title,
-            room: res.room,
-            is_admin: res.is_admin,
-            user: res.user,
-            user_email: res.user_email,
-          },
-        });
-      } else {
-        //Render the welcome screen if the user is not verified
-        this.chat_welcome = new ChatWelcome({
-          $wrapper: this.$chat_container,
-          profile: {
-            name: res.guest_title,
-            is_admin: res.is_admin,
-            chat_status: res.chat_status,
-          },
-        });
-        this.chat_welcome.render();
-      }
+      // Only admin/agent UI remains
+      this.chat_list = new ChatList({
+        $wrapper: this.$chat_container,
+        user: res.user,
+        user_email: res.user_email,
+        is_admin: res.is_admin,
+      });
+      this.chat_list.render();
     } catch (error) {
       console.error(error);
     }

@@ -34,7 +34,7 @@ def settings(token=None):  # token kept only for backward-compat with JS calls
     config["can_access_ui"] = can_access_ui
 
     # Merge chat settings (only relevant for authenticated users)
-    config.update(get_chat_settings())
+    config.update(get_chat_settings(can_access_ui))
 
     if config["is_admin"]:
         config["user"] = get_admin_name(user)
@@ -48,11 +48,16 @@ def get_admin_name(user_key):
     return frappe.db.get_value("User", user_key, "full_name")
 
 
-def get_chat_settings():
+def get_chat_settings(can_access_ui: bool):
     """
-    Chat settings for authenticated users only.
-    (If you want to disable it for non-agents too, you can do it here.)
+    Only enable the chat widget for authorized agents/system managers.
+    Any other authenticated user (e.g. Website User) should not see the widget.
     """
+    if not can_access_ui:
+        return {
+            "enable_chat": False,
+            "chat_status": "Offline",
+        }
     return {
         "enable_chat": True,
         "chat_status": "Online",

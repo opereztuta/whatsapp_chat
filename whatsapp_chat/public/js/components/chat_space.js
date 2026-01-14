@@ -92,12 +92,7 @@ export default class ChatSpace {
     this.message_html = ``;
     if (this.profile.message) {
       messages_list.push(this.profile.message);
-      send_message(
-        this.profile.message.content,
-        this.profile.user,
-        this.profile.room,
-        this.profile.user_email
-      );
+      send_message(this.profile.message.content, this.profile.room, null);
     }
     messages_list.forEach((element) => {
       const date_line_html = this.make_date_line_html(element.creation);

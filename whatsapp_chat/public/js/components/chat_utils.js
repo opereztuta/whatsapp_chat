@@ -78,13 +78,11 @@ async function send_message(content, room, attachment) {
   
 }
 
-async function get_settings(token) {
+async function get_settings() {
   const res = await frappe.call({
     type: 'GET',
     method: 'whatsapp_chat.api.config.settings',
-    args: {
-      token: token,
-    },
+    args: {},
   });
   return await res.message;
 }
@@ -100,19 +98,6 @@ async function mark_message_read(room) {
   } catch (error) {
     //pass
   }
-}
-
-
-async function create_guest({ email, full_name, message }) {
-  const res = await frappe.call({
-    method: 'chat.api.user.get_guest_room',
-    args: {
-      email: email,
-      full_name: full_name,
-      message: message,
-    },
-  });
-  return await res.message;
 }
 
 async function set_typing(room, user, is_typing, is_guest) {
@@ -182,7 +167,6 @@ export {
   get_rooms,
   get_messages,
   get_settings,
-  create_guest,
   send_message,
   get_date_from_now,
   is_date_change,
