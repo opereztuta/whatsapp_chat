@@ -1,6 +1,6 @@
 import frappe
 import mimetypes
-from whatsapp_chat.api.auth import require_contact_access
+from whatsapp_chat.api.auth import require_contact_access, ROLE_AGENT
 from whatsapp_chat.whatsapp_chat.doctype.whatsapp_contact.whatsapp_contact \
         import WhatsAppContact
 from frappe_whatsapp.frappe_whatsapp.doctype.whatsapp_message.whatsapp_message \
@@ -194,26 +194,66 @@ def last_message(doc, method):
             }))
         chat_doc.save(ignore_permissions=True)
 
-    if chat_doc.email and doc.type != 'Outgoing':
-        message_data = {
-            "content": doc.message or doc.attach or '',
-            "creation": now(),
-            "room": chat_doc.name,
-            "contact_name": chat_doc.contact_name,
-            "sender_user_no": mobile_no,
-            "user": "Guest"
-        }
+    # Only publish realtime for incoming messages
+    if doc.type == 'Outgoing':
+        return "ok"
+
+    # Determine content and caption based on content_type
+    content_type = doc.content_type or 'text'
+    if content_type == 'text':
+        content = doc.message or ''
+        caption = None
+    else:
+        content = doc.attach or doc.message or ''
+        caption = doc.message if doc.attach else None
+
+    message_data = {
+        "content": content,
+        "creation": now(),
+        "room": chat_doc.name,
+        "contact_name": chat_doc.contact_name,
+        "sender_user_no": mobile_no,
+        "user": "Guest",
+        "content_type": content_type,
+        "caption": caption,
+    }
+
+    # Determine which users should receive the realtime update
+    target_users = set()
+
+    # Always include System Managers (e.g., Administrator)
+    system_managers = frappe.get_all(
+        "Has Role",
+        filters={"role": "System Manager", "parenttype": "User"},
+        pluck="parent"
+    )
+    target_users.update(system_managers)
+
+    if chat_doc.email:
+        # Contact is assigned to a specific agent
+        target_users.add(chat_doc.email)
+    else:
+        # Shared inbox: notify all WhatsApp Chat Agents
+        agents = frappe.get_all(
+            "Has Role",
+            filters={"role": ROLE_AGENT, "parenttype": "User"},
+            pluck="parent"
+        )
+        target_users.update(agents)
+
+    # Publish to all target users
+    for user in target_users:
         # Notify chat list
         frappe.publish_realtime(
             "latest_chat_updates",
             message_data,
-            user=chat_doc.email
+            user=user
         )
         # Notify open chat room
         frappe.publish_realtime(
             chat_doc.name,
             message_data,
-            user=chat_doc.email
+            user=user
         )
 
     return "ok"

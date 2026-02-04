@@ -225,17 +225,22 @@ export default class ChatList {
     });
 
     frappe.realtime.on('new_room_creation', function (res) {
-      // if (
-      //   !$('.chat-element').is(':visible') &&
-      //   frappe.Chat.settings.user.enable_notifications === 1
-      // ) {
-      // }
-
       frappe.utils.play_sound('chat-notification');
-      res.user = me.user;
-      // res.is_admin = me.is_admin;
-      // res.user_email = me.user_email;
-      me.create_new_room(res);
+
+      // Build proper profile object for the new room
+      const profile = {
+        user: me.user,
+        user_email: res.mobile_no,
+        last_message: res.last_message || '',
+        last_date: res.modified,
+        is_admin: me.is_admin,
+        room: res.room,
+        is_read: res.is_read,
+        room_name: res.room_name,
+        room_type: 'Guest',  // WhatsApp contacts are Guest type
+        opposite_person_email: res.mobile_no,
+      };
+      me.create_new_room(profile);
     });
 
     frappe.realtime.on('private_room_creation', function (res) {

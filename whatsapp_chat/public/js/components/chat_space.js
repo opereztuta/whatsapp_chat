@@ -455,7 +455,7 @@ export default class ChatSpace {
     }
 
     this.$chat_space_container.append(
-      this.make_message(res.content, time, chat_type, res.user)
+      this.make_message(res.content, time, chat_type, res.user, res.caption)
     );
     scroll_to_bottom(this.$chat_space_container);
   }
