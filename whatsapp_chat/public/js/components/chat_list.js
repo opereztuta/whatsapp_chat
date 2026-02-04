@@ -1,6 +1,5 @@
 import ChatRoom from './chat_room';
 import ChatAddRoom from './chat_add_room';
-import ChatUserSettings from './chat_user_settings';
 import { get_rooms, mark_message_read, set_notification_count } from './chat_utils';
 
 export default class ChatList {
@@ -26,13 +25,9 @@ export default class ChatList {
 			<div class='chat-list-header'>
 				<h3>${__('Chats')}</h3>
         <div class='chat-list-icons'>
-          <div class='add-room' 
+          <div class='add-room'
             title='Create Private Room'>
             ${frappe.utils.icon('users', 'md')}
-          </div>
-          <div class='user-settings' 
-          title='Settings' style="display:none">
-          ${frappe.utils.icon('setting-gear', 'md')}
           </div>
         </div>
 			</div>
@@ -142,13 +137,6 @@ export default class ChatList {
       }
       me.chat_add_room_modal.show();
     });
-
-    $('.user-settings').on('click', function (e) {
-      if (typeof me.chat_user_settings === 'undefined') {
-        me.chat_user_settings = new ChatUserSettings();
-      }
-      me.chat_user_settings.show();
-    });
   }
 
   render_messages() {
@@ -255,34 +243,6 @@ export default class ChatList {
         opposite_person_email: res.mobile_no,
       };
       me.create_new_room(profile);
-    });
-
-    frappe.realtime.on('private_room_creation', function (res) {
-      if (
-        !$('.chat-element').is(':visible') &&
-        frappe.Chat.settings.user.enable_notifications === 1
-      ) {
-        frappe.utils.play_sound('chat-notification');
-      }
-
-      if (res.members.includes(me.user_email)) {
-        if (res.room_type === 'Direct') {
-          res.room_name =
-            res.member_names[0]['email'] == me.user_email
-              ? res.member_names[1]['name']
-              : res.member_names[0]['name'];
-
-          res.opposite_person_email =
-            res.member_names[0]['email'] == me.user_email
-              ? res.member_names[1]['email']
-              : res.member_names[0]['email'];
-        }
-
-        res.user = me.user;
-        res.is_admin = me.is_admin;
-        res.user_email = me.user_email;
-        me.create_new_room(res);
-      }
     });
   }
 }

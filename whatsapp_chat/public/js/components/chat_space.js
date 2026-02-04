@@ -5,7 +5,6 @@ import {
   get_date_from_now,
   is_date_change,
   send_message,
-  set_typing,
   is_image,
   get_avatar_html,
   mark_message_read,
