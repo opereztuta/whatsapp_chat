@@ -174,12 +174,26 @@ export default class ChatList {
     const me = this;
     frappe.realtime.on('latest_chat_updates', function (res) {
       //Find the room with the specified room id
-      const chat_room_item = me.chat_rooms.find(
+      let chat_room_item = me.chat_rooms.find(
         (element) => element[0] === res.room
       );
 
+      // If room doesn't exist yet (race condition with new_room_creation), create it
       if (typeof chat_room_item === 'undefined') {
-        return;
+        const profile = {
+          user: me.user,
+          user_email: res.sender_user_no,
+          last_message: res.content || '',
+          last_date: res.creation,
+          is_admin: me.is_admin,
+          room: res.room,
+          is_read: 0,
+          room_name: res.contact_name,
+          room_type: 'Guest',
+          opposite_person_email: res.sender_user_no,
+        };
+        me.create_new_room(profile);
+        chat_room_item = me.chat_rooms[0]; // Newly created room is at index 0
       }
 
       frappe.utils.play_sound('chat-message-receive');
