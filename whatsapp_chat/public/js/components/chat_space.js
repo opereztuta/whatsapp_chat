@@ -5,7 +5,6 @@ import {
   get_date_from_now,
   is_date_change,
   send_message,
-  set_typing,
   is_image,
   get_avatar_html,
   mark_message_read,
@@ -455,7 +454,7 @@ export default class ChatSpace {
     }
 
     this.$chat_space_container.append(
-      this.make_message(res.content, time, chat_type, res.user)
+      this.make_message(res.content, time, chat_type, res.user, res.caption)
     );
     scroll_to_bottom(this.$chat_space_container);
   }

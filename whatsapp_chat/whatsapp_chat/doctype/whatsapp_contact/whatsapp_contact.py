@@ -26,8 +26,12 @@ class WhatsAppContact(Document):
             frappe.publish_realtime(
                 "new_room_creation",
                 {
-                    "user": self.email,
-                    "room_name": self.contact_name
+                    "room": self.name,
+                    "room_name": self.contact_name,
+                    "mobile_no": self.mobile_no,
+                    "is_read": self.is_read,
+                    "last_message": self.last_message or "",
+                    "modified": str(self.modified),
                 },
                 user=self.email
             )

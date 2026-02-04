@@ -100,22 +100,6 @@ async function mark_message_read(room) {
   }
 }
 
-async function set_typing(room, user, is_typing, is_guest) {
-  try {
-    await frappe.call({
-      method: 'whatsapp_chat.api.message.set_typing',
-      args: {
-        room: room,
-        user: user,
-        is_typing: is_typing,
-        is_guest: is_guest,
-      },
-    });
-  } catch (error) {
-    //pass
-  }
-}
-
 async function create_private_room(contact_name, mobile_no, email) {
   await frappe.call({
     method: 'whatsapp_chat.api.contacts.create',
@@ -123,15 +107,6 @@ async function create_private_room(contact_name, mobile_no, email) {
       contact_name: contact_name,
       mobile_no: mobile_no,
       email: email
-    },
-  });
-}
-
-async function set_user_settings(settings) {
-  await frappe.call({
-    method: 'chat.api.config.user_settings',
-    args: {
-      settings: settings,
     },
   });
 }
@@ -171,10 +146,8 @@ export {
   get_date_from_now,
   is_date_change,
   mark_message_read,
-  set_typing,
   is_image,
   create_private_room,
-  set_user_settings,
   get_avatar_html,
   set_notification_count,
 };

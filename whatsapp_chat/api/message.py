@@ -1,10 +1,9 @@
 import frappe
 import mimetypes
-from whatsapp_chat.api.auth import require_contact_access
+from whatsapp_chat.api.auth import require_contact_access, ROLE_AGENT
 from whatsapp_chat.whatsapp_chat.doctype.whatsapp_contact.whatsapp_contact \
         import WhatsAppContact
-from frappe_whatsapp.frappe_whatsapp.doctype.whatsapp_message.whatsapp_message \
-        import WhatsAppMessage
+from frappe_whatsapp.frappe_whatsapp.doctype.whatsapp_message.whatsapp_message import WhatsAppMessage  # noqa: E501
 from typing import cast
 from frappe.utils import now
 
@@ -175,13 +174,18 @@ def last_message(doc, method):
     contact_name = frappe.db.get_value(
         "WhatsApp Contact", filters={"mobile_no": mobile_no})
     if contact_name:
+        # Use set_value to avoid TimestampMismatchError from concurrent updates
+        frappe.db.set_value(
+            "WhatsApp Contact",
+            contact_name,
+            {"last_message": doc.message, "is_read": 0},
+            update_modified=True
+        )
+        # Get fresh contact data for realtime publishing
         chat_doc = cast(
             WhatsAppContact,
             frappe.get_doc("WhatsApp Contact", str(contact_name))
         )
-        chat_doc.last_message = doc.message
-        chat_doc.is_read = 0
-        chat_doc.save(ignore_permissions=True)
     else:
         chat_doc = cast(
             WhatsAppContact,
@@ -192,28 +196,68 @@ def last_message(doc, method):
                 "contact_name": mobile_no,
                 "is_read": 0
             }))
-        chat_doc.save(ignore_permissions=True)
+        chat_doc.insert(ignore_permissions=True)
 
-    if chat_doc.email and doc.type != 'Outgoing':
-        message_data = {
-            "content": doc.message or doc.attach or '',
-            "creation": now(),
-            "room": chat_doc.name,
-            "contact_name": chat_doc.contact_name,
-            "sender_user_no": mobile_no,
-            "user": "Guest"
-        }
+    # Only publish realtime for incoming messages
+    if doc.type == 'Outgoing':
+        return "ok"
+
+    # Determine content and caption based on content_type
+    content_type = doc.content_type or 'text'
+    if content_type == 'text':
+        content = doc.message or ''
+        caption = None
+    else:
+        content = doc.attach or doc.message or ''
+        caption = doc.message if doc.attach else None
+
+    message_data = {
+        "content": content,
+        "creation": now(),
+        "room": chat_doc.name,
+        "contact_name": chat_doc.contact_name,
+        "sender_user_no": mobile_no,
+        "user": "Guest",
+        "content_type": content_type,
+        "caption": caption,
+    }
+
+    # Determine which users should receive the realtime update
+    target_users = set()
+
+    # Always include System Managers (e.g., Administrator)
+    system_managers = frappe.get_all(
+        "Has Role",
+        filters={"role": "System Manager", "parenttype": "User"},
+        pluck="parent"
+    )
+    target_users.update(system_managers)
+
+    if chat_doc.email:
+        # Contact is assigned to a specific agent
+        target_users.add(chat_doc.email)
+    else:
+        # Shared inbox: notify all WhatsApp Chat Agents
+        agents = frappe.get_all(
+            "Has Role",
+            filters={"role": ROLE_AGENT, "parenttype": "User"},
+            pluck="parent"
+        )
+        target_users.update(agents)
+
+    # Publish to all target users
+    for user in target_users:
         # Notify chat list
         frappe.publish_realtime(
             "latest_chat_updates",
             message_data,
-            user=chat_doc.email
+            user=user
         )
         # Notify open chat room
         frappe.publish_realtime(
             chat_doc.name,
             message_data,
-            user=chat_doc.email
+            user=user
         )
 
     return "ok"
