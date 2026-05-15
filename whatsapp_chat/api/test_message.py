@@ -140,7 +140,7 @@ class TestWhatsAppChatMessageAudio(FrappeTestCase):
         self.assertEqual(message_doc.message, "")
         self.assertEqual(message_doc.attach, file_doc.file_url)
         if message_doc.meta.has_field("is_voice_note"):
-            self.assertEqual(message_doc.is_voice_note, 1)
+            self.assertEqual(message_doc.get("is_voice_note"), 1)
 
         contact.reload()
         self.assertEqual(contact.last_message, "Voice note")
@@ -161,7 +161,7 @@ class TestWhatsAppChatMessageAudio(FrappeTestCase):
             "whatsapp_account": account.name,
         })
         if message_doc.meta.has_field("is_voice_note"):
-            message_doc.is_voice_note = 1
+            message_doc.set("is_voice_note", 1)
         message_doc.insert(ignore_permissions=True)
 
         messages = get_all(contact.name)
@@ -174,4 +174,4 @@ class TestWhatsAppChatMessageAudio(FrappeTestCase):
         self.assertEqual(len(audio_messages), 1)
         self.assertEqual(audio_messages[0].caption, None)
         self.assertEqual(audio_messages[0].attachment_mime_type, "audio/ogg")
-        self.assertEqual(audio_messages[0].is_voice_note, 1)
+        self.assertEqual(audio_messages[0].get("is_voice_note"), 1)
