@@ -158,6 +158,30 @@ export default class ChatList {
     ];
   }
 
+  get_message_preview(res) {
+    if (res.preview) {
+      return res.preview;
+    }
+    if (res.caption) {
+      return res.caption;
+    }
+    const labels = {
+      audio: __('Voice note'),
+      image: __('Image'),
+      document: __('Document'),
+      video: __('Video'),
+      sticker: __('Sticker'),
+    };
+    return labels[res.content_type] || res.content || '';
+  }
+
+  truncate_preview(message) {
+    const safe_message = message || '';
+    return safe_message.length > 24
+      ? safe_message.substring(0, 24) + '...'
+      : safe_message;
+  }
+
   setup_socketio() {
     const me = this;
     frappe.realtime.on('latest_chat_updates', function (res) {
@@ -168,10 +192,11 @@ export default class ChatList {
 
       // If room doesn't exist yet (race condition with new_room_creation), create it
       if (typeof chat_room_item === 'undefined') {
+        const preview = me.truncate_preview(me.get_message_preview(res));
         const profile = {
           user: me.user,
           user_email: res.sender_user_no,
-          last_message: res.content || '',
+          last_message: preview,
           last_date: res.creation,
           is_admin: me.is_admin,
           room: res.room,
@@ -185,15 +210,14 @@ export default class ChatList {
       }
 
       frappe.utils.play_sound('chat-message-receive');
-      const message =
-        res.content.length > 24
-          ? res.content.substring(0, 24) + '...'
-          : res.content;
+      const message = me.truncate_preview(me.get_message_preview(res));
+      const alert_contact_name = $('<div>').text(res.contact_name || '').html();
+      const alert_message = $('<div>').text(message).html();
 
       frappe.show_alert({
           message: `<a href="#" data-action="open-chat" style="text-decoration: none; color: inherit;">
-            <strong>${res.contact_name}</strong><br>
-            <span style="opacity: 0.9;">${message}</span>
+            <strong>${alert_contact_name}</strong><br>
+            <span style="opacity: 0.9;">${alert_message}</span>
           </a>`,
           indicator: 'green'
       }, 5, {
