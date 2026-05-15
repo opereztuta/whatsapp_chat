@@ -62,20 +62,52 @@ async function get_messages(room) {
   return await res.message;
 }
 
-async function send_message(content, room, attachment) {
-  try {
-    await frappe.call({
-      method: 'whatsapp_chat.api.message.send',
-      args: { room, content, attachment: attachment || null },
-    });
-  } catch (error) {
-    frappe.msgprint({
-      title: __('Error'),
-      message: __('Something went wrong. Please refresh and try again.'),
-      indicator: 'red',
-    });
+function get_error_message(error, fallback) {
+  if (error && error._server_messages) {
+    try {
+      const messages = JSON.parse(error._server_messages);
+      if (messages.length) {
+        const first = JSON.parse(messages[0]);
+        if (first.message) {
+          return first.message;
+        }
+      }
+    } catch (e) {
+      // fall through to other shapes
+    }
   }
-  
+
+  if (error && error.message) {
+    return error.message;
+  }
+
+  return fallback;
+}
+
+async function send_message(content, room, attachment, mime_type, content_type) {
+  const res = await frappe.call({
+    method: 'whatsapp_chat.api.message.send',
+    args: {
+      room,
+      content,
+      attachment: attachment || null,
+      mime_type: mime_type || null,
+      content_type: content_type || null,
+    },
+  });
+  return res.message;
+}
+
+async function send_voice_note(room, attachment, mime_type) {
+  const res = await frappe.call({
+    method: 'whatsapp_chat.api.message.send_voice_note',
+    args: {
+      room,
+      attachment,
+      mime_type: mime_type || null,
+    },
+  });
+  return res.message;
 }
 
 async function get_settings() {
@@ -143,6 +175,7 @@ export {
   get_messages,
   get_settings,
   send_message,
+  send_voice_note,
   get_date_from_now,
   is_date_change,
   mark_message_read,
@@ -150,4 +183,5 @@ export {
   create_private_room,
   get_avatar_html,
   set_notification_count,
+  get_error_message,
 };

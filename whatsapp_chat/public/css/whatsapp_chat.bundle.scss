@@ -252,6 +252,20 @@ $height: 582px;
       font-size: $font-size-xs;
       font-weight: bold;
     }
+    .chat-audio-message {
+      min-width: 210px;
+      max-width: 100%;
+      .chat-audio-label {
+        font-size: $font-size-xs;
+        font-weight: 600;
+        margin-bottom: 6px;
+      }
+      audio {
+        display: block;
+        width: 100%;
+        max-width: 260px;
+      }
+    }
     .sender-message {
       display: flex;
       flex-direction: column;
@@ -303,11 +317,69 @@ $height: 582px;
     align-items: center;
     .open-attach-items {
       cursor: pointer;
+      &.disabled {
+        cursor: not-allowed;
+        opacity: 0.45;
+      }
     }
     .type-message {
       margin: 0 10px;
       border-radius: 100px;
       font-size: $font-size-sm;
+    }
+    .voice-record-button,
+    .voice-stop-button,
+    .voice-cancel-button {
+      border: 0;
+      cursor: pointer;
+      height: 2rem;
+      width: 2rem;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex: 0 0 2rem;
+    }
+    .voice-record-button {
+      background: var(--control-bg);
+      color: var(--text-color);
+      margin-right: 8px;
+    }
+    .voice-recording-state {
+      align-items: center;
+      gap: 8px;
+      margin-right: 8px;
+      &.hidden {
+        display: none;
+      }
+      &:not(.hidden) {
+        display: flex;
+      }
+      .voice-recording-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--red-500);
+        flex: 0 0 8px;
+      }
+      .voice-recording-timer {
+        min-width: 34px;
+        font-size: $font-size-sm;
+        color: var(--text-color);
+      }
+      .voice-stop-button {
+        background: var(--blue-500);
+        svg {
+          fill: var(--white);
+        }
+      }
+      .voice-cancel-button {
+        background: var(--control-bg);
+        color: var(--text-muted);
+      }
+    }
+    .voice-record-button.hidden {
+      display: none;
     }
     .message-send-button {
       cursor: pointer;
@@ -318,6 +390,10 @@ $height: 582px;
       display: flex;
       align-items: center;
       justify-content: center;
+      &.disabled {
+        cursor: not-allowed;
+        opacity: 0.45;
+      }
       svg {
         fill: var(--white);
       }
