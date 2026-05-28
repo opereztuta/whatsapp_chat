@@ -144,7 +144,10 @@ after_install = "whatsapp_chat.install.after_install"
 
 doc_events = {
     "WhatsApp Message": {
-        "after_insert":"whatsapp_chat.api.message.last_message"
+        "after_insert": "whatsapp_chat.api.message.last_message"
+    },
+    "Meta Messaging Message": {
+        "after_insert": "whatsapp_chat.api.messenger.last_message"
     }
 }
 
