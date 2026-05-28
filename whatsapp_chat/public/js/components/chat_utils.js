@@ -132,6 +132,23 @@ async function mark_message_read(room) {
   }
 }
 
+async function get_messenger_rooms() {
+  const res = await frappe.call({
+    type: 'GET',
+    method: 'whatsapp_chat.api.messenger.get_contacts',
+    args: {},
+  });
+  return res.message;
+}
+
+async function get_messenger_messages(room) {
+  const res = await frappe.call({
+    method: 'whatsapp_chat.api.messenger.get_all_messages',
+    args: { room },
+  });
+  return res.message;
+}
+
 async function create_private_room(contact_name, mobile_no, email) {
   await frappe.call({
     method: 'whatsapp_chat.api.contacts.create',
@@ -184,4 +201,6 @@ export {
   get_avatar_html,
   set_notification_count,
   get_error_message,
+  get_messenger_rooms,
+  get_messenger_messages,
 };

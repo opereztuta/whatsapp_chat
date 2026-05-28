@@ -128,3 +128,86 @@ def _normalise_channel(channel: str | None) -> str:
         "messenger": "Messenger",
     }
     return mapping.get((channel or "").lower(), "Messenger")
+
+
+def _require_messenger_contact_access(room: str) -> None:
+    from whatsapp_chat.api.auth import require_chat_access
+    require_chat_access()
+
+    user = frappe.session.user
+    roles = set(frappe.get_roles(user))
+    if "System Manager" in roles:
+        return
+
+    contact = frappe.get_doc("Messenger Contact", room)
+    if contact.email == user:
+        return
+    if (contact.email or "") == "":
+        return  # shared inbox
+
+    frappe.throw(
+        frappe._("You are not allowed to access this conversation."),
+        frappe.PermissionError,
+    )
+
+
+@frappe.whitelist()
+def get_contacts():
+    """Return Messenger Contacts visible to the current user."""
+    from whatsapp_chat.api.auth import require_chat_access
+    require_chat_access()
+
+    user = frappe.session.user
+    roles = set(frappe.get_roles(user))
+
+    if "System Manager" in roles:
+        return frappe.db.get_all(
+            "Messenger Contact", fields=["*"], order_by="modified desc")
+
+    return frappe.db.get_all(
+        "Messenger Contact",
+        filters={"email": ["in", [user, ""]]},
+        fields=["*"],
+        order_by="modified desc",
+    )
+
+
+@frappe.whitelist()
+def mark_as_read(room: str):
+    _require_messenger_contact_access(room)
+    frappe.db.set_value(
+        "Messenger Contact", room, "is_read", 1, update_modified=False)
+    frappe.db.commit()
+    return "ok"
+
+
+@frappe.whitelist()
+def get_all_messages(room: str):
+    """Return all Meta Messaging Messages for a Messenger Contact."""
+    _require_messenger_contact_access(room)
+
+    contact = frappe.get_doc("Messenger Contact", room)
+    sender_id = contact.sender_id
+
+    messages = frappe.db.sql("""
+        SELECT
+            name,
+            creation,
+            direction,
+            CASE WHEN direction = 'outgoing' THEN 'Administrator'
+                 ELSE sender_id
+            END AS sender_user_no,
+            CASE WHEN LOWER(COALESCE(message_type, 'text')) = 'text'
+                      THEN COALESCE(text, '')
+                 ELSE COALESCE(attachment_url, text, '')
+            END AS content,
+            LOWER(COALESCE(message_type, 'text')) AS content_type,
+            NULL AS caption,
+            NULL AS attachment_mime_type,
+            0 AS is_voice_note
+        FROM `tabMeta Messaging Message`
+        WHERE sender_id = %(sender_id)s OR recipient_id = %(sender_id)s
+        ORDER BY creation ASC
+    """, {"sender_id": sender_id}, as_dict=True)
+
+    return messages

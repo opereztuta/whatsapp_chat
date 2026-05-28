@@ -1,0 +1,189 @@
+import {
+  get_time,
+  scroll_to_bottom,
+  get_messenger_messages,
+  get_date_from_now,
+  is_date_change,
+  get_avatar_html,
+} from './chat_utils';
+
+export default class MessengerSpace {
+  constructor(opts) {
+    this.messenger_list = opts.messenger_list;
+    this.$wrapper = opts.$wrapper;
+    this.profile = opts.profile;
+    this.setup();
+  }
+
+  setup() {
+    this.$chat_space = $(document.createElement('div'));
+    this.$chat_space.addClass('chat-space');
+    this.setup_header();
+    this.fetch_and_setup_messages();
+    this.setup_socketio();
+  }
+
+  setup_header() {
+    const avatar_html = get_avatar_html(
+      this.profile.room_type,
+      this.profile.opposite_person_email,
+      this.profile.room_name
+    );
+    this.$chat_space.append(`
+      <div class='chat-header'>
+        <span class='messenger-back-button' title='${__('Go Back')}'>
+          ${frappe.utils.icon('left')}
+        </span>
+        ${avatar_html}
+        <div class='chat-profile-info'>
+          <div class='chat-profile-name'>${__(this.profile.room_name)}</div>
+          <div class='chat-profile-status'></div>
+        </div>
+      </div>
+    `);
+  }
+
+  async fetch_and_setup_messages() {
+    try {
+      const res = await get_messenger_messages(this.profile.room);
+      this.setup_messages(res);
+      this.render();
+    } catch (error) {
+      frappe.msgprint({
+        title: __('Error'),
+        message: __('Something went wrong. Please refresh and try again.'),
+      });
+    }
+  }
+
+  setup_messages(messages_list) {
+    this.$chat_space_container = $(document.createElement('div'));
+    this.$chat_space_container.addClass('chat-space-container');
+    this.make_messages_html(messages_list);
+    this.$chat_space_container.html(this.message_html);
+    this.$chat_space.append(this.$chat_space_container);
+  }
+
+  make_messages_html(messages_list) {
+    this.prevMessage = {};
+    this.message_html = '';
+    messages_list.forEach((element) => {
+      this.message_html += this.make_date_line_html(element.creation);
+      const message_type = element.direction === 'outgoing' ? 'recipient' : 'sender';
+      this.message_html += this.make_message(
+        element.content,
+        get_time(element.creation),
+        message_type,
+        element.content_type,
+        element.attachment_mime_type
+      ).prop('outerHTML');
+      this.prevMessage = element;
+    });
+  }
+
+  make_date_line_html(dateObj) {
+    const html = `
+      <div class='date-line'>
+        <span>${__(get_date_from_now(dateObj, 'space'))}</span>
+      </div>
+    `;
+    if ($.isEmptyObject(this.prevMessage)) return html;
+    if (is_date_change(dateObj, this.prevMessage.creation)) return html;
+    return '';
+  }
+
+  make_message(content, time, type, content_type, attachment_mime_type) {
+    const message_class = type === 'recipient' ? 'recipient-message' : 'sender-message';
+    const $el = $(document.createElement('div')).addClass(message_class);
+    const $bubble = $(document.createElement('div')).addClass('message-bubble');
+
+    const safe_content = content || '';
+    const normalized_type = content_type || 'text';
+    const n = safe_content.lastIndexOf('/');
+    const file_name = safe_content.substring(n + 1) || '';
+    const is_url = (
+      safe_content.startsWith('/files/')
+      || safe_content.startsWith('/private/files/')
+      || safe_content.startsWith('http://')
+      || safe_content.startsWith('https://')
+    );
+
+    let $content;
+    if (normalized_type === 'audio' && safe_content) {
+      const $audio = $(document.createElement('audio'))
+        .attr({ controls: true, preload: 'metadata', src: safe_content });
+      if (attachment_mime_type) $audio.attr('type', attachment_mime_type);
+      $content = $(document.createElement('div'))
+        .addClass('chat-audio-message')
+        .append(
+          $(document.createElement('div')).addClass('chat-audio-label').text(__('Audio'))
+        )
+        .append($audio);
+    } else if (is_url && file_name && normalized_type !== 'text') {
+      if (normalized_type === 'image') {
+        $content = $(document.createElement('img'))
+          .attr({ src: safe_content })
+          .addClass('img-responsive chat-image');
+        $bubble.css({ padding: '0px', background: 'inherit' });
+      } else {
+        $content = $(document.createElement('a'))
+          .attr({ href: safe_content, target: '_blank' })
+          .text(file_name);
+        if (type === 'sender') $content.css('color', 'var(--cyan-100)');
+      }
+    } else {
+      $content = $(document.createElement('span')).text(safe_content);
+    }
+
+    $bubble.append($content);
+    $el.append($bubble);
+    $el.append($(document.createElement('div')).addClass('message-time').text(time));
+    return $el;
+  }
+
+  setup_socketio() {
+    const me = this;
+    this.received_ids = new Set();
+
+    frappe.realtime.on('latest_messenger_updates', function (res) {
+      if (res.room !== me.profile.room) return;
+      const id = res.name || `${res.content}-${res.creation}`;
+      if (me.received_ids.has(id)) return;
+      me.received_ids.add(id);
+      me.$chat_space_container.append(
+        me.make_message(res.content, get_time(res.creation), 'sender', res.content_type, null)
+      );
+      scroll_to_bottom(me.$chat_space_container);
+    });
+
+    frappe.realtime.on(this.profile.room, function (res) {
+      if (!res.messenger) return;
+      const id = res.name || `${res.content}-${res.creation}`;
+      if (me.received_ids.has(id)) return;
+      me.received_ids.add(id);
+      me.$chat_space_container.append(
+        me.make_message(res.content, get_time(res.creation), 'sender', res.content_type, null)
+      );
+      scroll_to_bottom(me.$chat_space_container);
+    });
+  }
+
+  destroy_socket_events() {
+    frappe.realtime.off('latest_messenger_updates');
+    frappe.realtime.off(this.profile.room);
+  }
+
+  render() {
+    this.$wrapper.html(this.$chat_space);
+    this.setup_events();
+    scroll_to_bottom(this.$chat_space_container);
+  }
+
+  setup_events() {
+    const me = this;
+    this.$chat_space.find('.messenger-back-button').on('click', function () {
+      me.messenger_list.render_messages();
+      me.messenger_list.render();
+    });
+  }
+}
