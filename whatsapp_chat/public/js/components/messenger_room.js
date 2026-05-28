@@ -1,5 +1,5 @@
 import MessengerSpace from './messenger_space';
-import { get_date_from_now, get_time, get_avatar_html } from './chat_utils';
+import { get_date_from_now, get_time, get_avatar_html, set_messenger_notification_count } from './chat_utils';
 
 export default class MessengerRoom {
   constructor(opts) {
@@ -8,6 +8,9 @@ export default class MessengerRoom {
     this.messenger_list = opts.messenger_list;
     this.profile = opts.element;
     this.setup();
+    if (!this.profile.is_read) {
+      set_messenger_notification_count('increment');
+    }
   }
 
   setup() {
@@ -56,6 +59,7 @@ export default class MessengerRoom {
     this.profile.is_read = 1;
     this.$messenger_room.find('.last-message').css('color', 'var(--text-muted)');
     this.$messenger_room.find('.chat-latest').hide();
+    set_messenger_notification_count('decrement');
   }
 
   set_last_message(message, date) {
@@ -65,6 +69,9 @@ export default class MessengerRoom {
   }
 
   set_as_unread() {
+    if (this.profile.is_read) {
+      set_messenger_notification_count('increment');
+    }
     this.profile.is_read = 0;
     this.$messenger_room.find('.last-message').css('color', 'var(--text-color)');
     this.$messenger_room.find('.chat-latest').show();

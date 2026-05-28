@@ -1,5 +1,5 @@
 import MessengerRoom from './messenger_room';
-import { get_messenger_rooms, get_time } from './chat_utils';
+import { get_messenger_rooms, get_time, set_messenger_notification_count } from './chat_utils';
 
 export default class MessengerList {
   constructor(opts) {
@@ -176,6 +176,16 @@ export default class MessengerList {
         room_item[1].set_as_unread();
         room_item[1].move_to_top();
         me.move_room_to_top(room_item);
+      } else if ($('.messenger-element .chat-space').is(':visible')) {
+        frappe.call({
+          method: 'whatsapp_chat.api.messenger.mark_as_read',
+          args: { room: res.room },
+        });
+      } else {
+        if (room_item[1].profile.is_read === 1) {
+          set_messenger_notification_count('increment');
+          room_item[1].profile.is_read = 0;
+        }
       }
     });
   }

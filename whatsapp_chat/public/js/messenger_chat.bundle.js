@@ -76,6 +76,7 @@ frappe.MessengerChat = class {
 
       frappe.MessengerChat.settings = {};
       frappe.MessengerChat.settings.user = res.user_settings;
+      frappe.MessengerChat.settings.unread_count = 0;
 
       this.messenger_list = new MessengerList({
         $wrapper: this.$messenger_container,

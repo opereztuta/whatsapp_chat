@@ -132,6 +132,18 @@ async function mark_message_read(room) {
   }
 }
 
+function set_messenger_notification_count(type) {
+  const current_count = frappe.MessengerChat.settings.unread_count;
+  if (type === 'increment') {
+    $('#messenger-notification-count').text(current_count + 1);
+    frappe.MessengerChat.settings.unread_count += 1;
+  } else {
+    const next = current_count - 1;
+    $('#messenger-notification-count').text(next <= 0 ? '' : next);
+    frappe.MessengerChat.settings.unread_count = Math.max(0, next);
+  }
+}
+
 async function get_messenger_rooms() {
   const res = await frappe.call({
     type: 'GET',
@@ -203,4 +215,5 @@ export {
   get_error_message,
   get_messenger_rooms,
   get_messenger_messages,
+  set_messenger_notification_count,
 };
