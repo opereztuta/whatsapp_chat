@@ -2,9 +2,11 @@ import {
   get_time,
   scroll_to_bottom,
   get_messenger_messages,
+  send_messenger_message,
   get_date_from_now,
   is_date_change,
   get_avatar_html,
+  get_error_message,
 } from './chat_utils';
 
 export default class MessengerSpace {
@@ -43,10 +45,30 @@ export default class MessengerSpace {
     `);
   }
 
+  setup_actions() {
+    this.$chat_actions = $(document.createElement('div'));
+    this.$chat_actions.addClass('chat-space-actions');
+    this.$chat_actions.html(`
+      <input class='form-control type-message'
+        type='text'
+        placeholder='${__('Type message')}'
+      >
+      <div>
+        <span class='message-send-button'>
+          <svg xmlns="http://www.w3.org/2000/svg" width="1.1rem" height="1.1rem" viewBox="0 0 24 24">
+            <path d="M24 0l-6 22-8.129-7.239 7.802-8.234-10.458 7.227-7.215-1.754 24-12zm-15 16.668v7.332l3.258-4.431-3.258-2.901z"/>
+          </svg>
+        </span>
+      </div>
+    `);
+    this.$chat_space.append(this.$chat_actions);
+  }
+
   async fetch_and_setup_messages() {
     try {
       const res = await get_messenger_messages(this.profile.room);
       this.setup_messages(res);
+      this.setup_actions();
       this.render();
     } catch (error) {
       frappe.msgprint({
@@ -179,11 +201,38 @@ export default class MessengerSpace {
     scroll_to_bottom(this.$chat_space_container);
   }
 
+  async handle_send_message() {
+    const $input = this.$chat_space.find('.type-message');
+    const content = ($input.val() || '').trim();
+    if (!content) return;
+
+    try {
+      const sent = await send_messenger_message(this.profile.room, content);
+      $input.val('');
+      this.$chat_space_container.append(
+        this.make_message(sent.content, get_time(), 'recipient', 'text', null)
+      );
+      scroll_to_bottom(this.$chat_space_container);
+    } catch (error) {
+      frappe.msgprint({
+        title: __('Could not send message'),
+        message: get_error_message(error, __('Something went wrong. Please refresh and try again.')),
+        indicator: 'red',
+      });
+    }
+  }
+
   setup_events() {
     const me = this;
     this.$chat_space.find('.messenger-back-button').on('click', function () {
       me.messenger_list.render_messages();
       me.messenger_list.render();
+    });
+    this.$chat_space.find('.message-send-button').on('click', function () {
+      me.handle_send_message();
+    });
+    this.$chat_space.find('.type-message').on('keydown', function (e) {
+      if (e.which === 13) me.handle_send_message();
     });
   }
 }

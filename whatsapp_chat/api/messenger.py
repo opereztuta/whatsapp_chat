@@ -1,6 +1,8 @@
 import frappe
 from frappe.utils import now
+from typing import cast
 from whatsapp_chat.api.auth import ROLE_AGENT
+from whatsapp_chat.whatsapp_chat.doctype.messenger_contact.messenger_contact import MessengerContact
 
 
 def _message_preview(doc) -> str:
@@ -53,10 +55,19 @@ def last_message(doc, method):
         )
         chat_doc = frappe.get_doc("Messenger Contact", str(contact_name))
     else:
+        contact_name = sender_id
+        if doc.connection:
+            try:
+                from frappe_meta_messenger.utils.meta_api import get_user_profile
+                profile = get_user_profile(str(doc.connection), sender_id)
+                contact_name = profile.get("name") or sender_id
+            except Exception:
+                pass
+
         chat_doc = frappe.get_doc({
             "doctype": "Messenger Contact",
             "sender_id": sender_id,
-            "contact_name": sender_id,   # default name to ID until enriched
+            "contact_name": contact_name,
             "last_message": preview,
             "is_read": 0,
             "channel": _normalise_channel(doc.channel),
@@ -179,6 +190,33 @@ def mark_as_read(room: str):
         "Messenger Contact", room, "is_read", 1, update_modified=False)
     frappe.db.commit()
     return "ok"
+
+
+@frappe.whitelist()
+def send_message(room: str, content: str):
+    _require_messenger_contact_access(room)
+
+    content = (content or "").strip()
+    if not content:
+        frappe.throw(frappe._("Message cannot be empty."))
+
+    contact = cast(MessengerContact, frappe.get_doc("Messenger Contact", room))
+
+    if not contact.connection:
+        frappe.throw(frappe._("This contact has no Meta Connection configured."))
+
+    from frappe_meta_messenger.utils.message_service import send_text
+    send_text(
+        connection_name=str(contact.connection),
+        recipient_id=contact.sender_id,
+        text=content,
+    )
+
+    return {
+        "content": content,
+        "direction": "outgoing",
+        "content_type": "text",
+    }
 
 
 @frappe.whitelist()

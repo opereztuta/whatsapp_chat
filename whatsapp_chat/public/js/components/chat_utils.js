@@ -144,6 +144,14 @@ function set_messenger_notification_count(type) {
   }
 }
 
+async function send_messenger_message(room, content) {
+  const res = await frappe.call({
+    method: 'whatsapp_chat.api.messenger.send_message',
+    args: { room, content },
+  });
+  return res.message;
+}
+
 async function get_messenger_rooms() {
   const res = await frappe.call({
     type: 'GET',
@@ -215,5 +223,6 @@ export {
   get_error_message,
   get_messenger_rooms,
   get_messenger_messages,
+  send_messenger_message,
   set_messenger_notification_count,
 };
