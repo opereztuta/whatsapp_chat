@@ -15,8 +15,8 @@ is_frappe_above_v13 = int(frappe_version.split('.')[0]) > 13
 app_include_css = ['whatsapp_chat.bundle.css'] if is_frappe_above_v13 else [
     '/assets/css/whatsapp_chat.css']
 
-app_include_js = ['whatsapp_chat.bundle.js'] if is_frappe_above_v13 else [
-    '/assets/js/whatsapp_chat.js']
+app_include_js = ['whatsapp_chat.bundle.js', 'messenger_chat.bundle.js'] if is_frappe_above_v13 else [
+    '/assets/js/whatsapp_chat.js', '/assets/js/messenger_chat.js']
 
 # include js, css files in header of desk.html
 # app_include_css = "/assets/whatsapp_chat/css/whatsapp_chat.css"
@@ -144,7 +144,10 @@ after_install = "whatsapp_chat.install.after_install"
 
 doc_events = {
     "WhatsApp Message": {
-        "after_insert":"whatsapp_chat.api.message.last_message"
+        "after_insert": "whatsapp_chat.api.message.last_message"
+    },
+    "Meta Messaging Message": {
+        "after_insert": "whatsapp_chat.api.messenger.last_message"
     }
 }
 

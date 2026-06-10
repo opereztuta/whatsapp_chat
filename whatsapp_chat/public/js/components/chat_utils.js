@@ -132,6 +132,43 @@ async function mark_message_read(room) {
   }
 }
 
+function set_messenger_notification_count(type) {
+  const current_count = frappe.MessengerChat.settings.unread_count;
+  if (type === 'increment') {
+    $('#messenger-notification-count').text(current_count + 1);
+    frappe.MessengerChat.settings.unread_count += 1;
+  } else {
+    const next = current_count - 1;
+    $('#messenger-notification-count').text(next <= 0 ? '' : next);
+    frappe.MessengerChat.settings.unread_count = Math.max(0, next);
+  }
+}
+
+async function send_messenger_message(room, content) {
+  const res = await frappe.call({
+    method: 'whatsapp_chat.api.messenger.send_message',
+    args: { room, content },
+  });
+  return res.message;
+}
+
+async function get_messenger_rooms() {
+  const res = await frappe.call({
+    type: 'GET',
+    method: 'whatsapp_chat.api.messenger.get_contacts',
+    args: {},
+  });
+  return res.message;
+}
+
+async function get_messenger_messages(room) {
+  const res = await frappe.call({
+    method: 'whatsapp_chat.api.messenger.get_all_messages',
+    args: { room },
+  });
+  return res.message;
+}
+
 async function create_private_room(contact_name, mobile_no, email) {
   await frappe.call({
     method: 'whatsapp_chat.api.contacts.create',
@@ -184,4 +221,8 @@ export {
   get_avatar_html,
   set_notification_count,
   get_error_message,
+  get_messenger_rooms,
+  get_messenger_messages,
+  send_messenger_message,
+  set_messenger_notification_count,
 };
