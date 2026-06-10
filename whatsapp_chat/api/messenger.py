@@ -28,7 +28,6 @@ def last_message(doc, method):
     - Updates last_message preview and is_read flag.
     - Publishes realtime events for the chat UI (incoming only).
     """
-    print("HEREEEE")
     # direction is lowercase in Meta Messaging Message: 'incoming' / 'outgoing'
     is_outgoing = (doc.direction or "").lower() == "outgoing"
 

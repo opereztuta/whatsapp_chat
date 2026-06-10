@@ -29,7 +29,6 @@ def get():
 
     user = frappe.session.user
     roles = set(frappe.get_roles(user))
-    print("contacts for user loading::", user, roles)   # ← shows in terminal
 
     if "System Manager" in roles:
         return frappe.db.get_all("WhatsApp Contact", fields=["*"])
