@@ -110,6 +110,22 @@ async function send_voice_note(room, attachment, mime_type) {
   return res.message;
 }
 
+async function get_call_state(room) {
+  const res = await frappe.call({
+    method: 'whatsapp_chat.api.message.get_call_state',
+    args: { room },
+  });
+  return res.message;
+}
+
+async function start_whatsapp_call(room) {
+  const res = await frappe.call({
+    method: 'whatsapp_chat.api.message.start_call',
+    args: { room },
+  });
+  return res.message;
+}
+
 async function get_settings() {
   const res = await frappe.call({
     type: 'GET',
@@ -213,6 +229,8 @@ export {
   get_settings,
   send_message,
   send_voice_note,
+  get_call_state,
+  start_whatsapp_call,
   get_date_from_now,
   is_date_change,
   mark_message_read,

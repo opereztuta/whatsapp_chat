@@ -581,6 +581,42 @@ def mark_as_read(room: str):
     return "ok"
 
 
+@frappe.whitelist()
+def get_call_state(room: str):
+    """Return WhatsApp calling state for the current chat room."""
+    require_contact_access(room)
+    contact = cast(
+        WhatsAppContact,
+        frappe.get_doc("WhatsApp Contact", room))
+    if not contact.mobile_no:
+        frappe.throw(_("This contact has no mobile number."))
+
+    from frappe_whatsapp.utils.calling import get_call_state as _get_state
+    return _get_state(
+        phone_number=contact.mobile_no,
+        contact=room,
+        agent_user=frappe.session.user,
+    )
+
+
+@frappe.whitelist()
+def start_call(room: str):
+    """Start or request permission for a WhatsApp outbound call."""
+    require_contact_access(room)
+    contact = cast(
+        WhatsAppContact,
+        frappe.get_doc("WhatsApp Contact", room))
+    if not contact.mobile_no:
+        frappe.throw(_("This contact has no mobile number."))
+
+    from frappe_whatsapp.utils.calling import start_outbound_call
+    return start_outbound_call(
+        phone_number=contact.mobile_no,
+        contact=room,
+        agent_user=frappe.session.user,
+    )
+
+
 def send_whatsapp_read_receipts(room):
     """Send read receipts to WhatsApp for unread incoming messages."""
     try:
