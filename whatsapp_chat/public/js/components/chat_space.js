@@ -6,6 +6,8 @@ import {
   is_date_change,
   send_message,
   send_voice_note,
+  get_call_state,
+  start_whatsapp_call,
   is_image,
   get_avatar_html,
   mark_message_read,
@@ -25,6 +27,7 @@ export default class ChatSpace {
     this.voice_timer = null;
     this.voice_recording_started_at = null;
     this.voice_should_send = false;
+    this.call_state = null;
     this.setup();
   }
 
@@ -73,6 +76,7 @@ export default class ChatSpace {
       this.setup_messages(res);
       this.setup_actions();
       this.render();
+      this.refresh_call_state();
 
       // Mark messages as read when viewing the chat
       // This will also send read receipts to WhatsApp if enabled in settings
@@ -154,6 +158,9 @@ export default class ChatSpace {
 			<span class='open-attach-items'>
 				${frappe.utils.icon('attachment', 'lg')}
 			</span>
+			<button type='button' class='whatsapp-call-button disabled' title='${__('Checking call availability')}'>
+				${frappe.utils.icon('es-line-call', 'md')}
+			</button>
 			<input type='file' id='chat-file-uploader'
 				accept='image/*,audio/*,video/mp4,video/3gp,application/pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx'
 				style='display: none;'
@@ -267,6 +274,13 @@ export default class ChatSpace {
         return;
       }
       $('#chat-file-uploader').click();
+    });
+
+    $('.whatsapp-call-button').on('click', function () {
+      if ($(this).hasClass('disabled') || $(this).hasClass('loading')) {
+        return;
+      }
+      me.handle_start_call();
     });
 
     $('#chat-file-uploader').on('change', function () {
@@ -509,6 +523,7 @@ export default class ChatSpace {
     const me = this;
     // Track received message IDs to prevent duplicates
     this.received_message_ids = new Set();
+    this.received_call_event_ids = new Set();
 
     // Listen for room-specific messages
     frappe.realtime.on(this.profile.room, function (res) {
@@ -519,6 +534,12 @@ export default class ChatSpace {
     frappe.realtime.on('latest_chat_updates', function (res) {
       if (res.room === me.profile.room) {
         me.handle_incoming_message(res);
+      }
+    });
+
+    frappe.realtime.on('whatsapp_call_update', function (res) {
+      if (res.room === me.profile.room) {
+        me.handle_call_update(res);
       }
     });
   }
@@ -543,6 +564,94 @@ export default class ChatSpace {
   destroy_socket_events() {
     frappe.realtime.off(this.profile.room);
     frappe.realtime.off('latest_chat_updates');
+    frappe.realtime.off('whatsapp_call_update');
+  }
+
+  set_call_button_state(state) {
+    const $button = $('.whatsapp-call-button');
+    if (!$button.length) {
+      return;
+    }
+
+    const status = state ? state.status : 'Disabled';
+    const message = state ? state.message : __('WhatsApp calling unavailable');
+    $button
+      .removeClass('disabled waiting ready loading')
+      .attr('title', message || __('Call on WhatsApp'));
+
+    if (status === 'Ready' || status === 'No Permission') {
+      $button.addClass('ready');
+      return;
+    }
+
+    if (status === 'Permission Requested') {
+      $button.addClass('disabled waiting');
+      return;
+    }
+
+    $button.addClass('disabled');
+  }
+
+  async refresh_call_state() {
+    try {
+      const state = await get_call_state(this.profile.room);
+      this.call_state = state;
+      this.set_call_button_state(state);
+    } catch (error) {
+      this.call_state = null;
+      this.set_call_button_state({
+        status: 'Disabled',
+        message: get_error_message(
+          error,
+          __('WhatsApp calling unavailable')
+        ),
+      });
+    }
+  }
+
+  append_call_event(message, status) {
+    const $event = $(document.createElement('div')).addClass(
+      'chat-call-event'
+    );
+    if (status) {
+      $event.attr('data-status', status);
+    }
+    $event.text(message || __('Call status updated'));
+    this.$chat_space_container.append($event);
+    scroll_to_bottom(this.$chat_space_container);
+  }
+
+  handle_call_update(res) {
+    const event_id = `${res.call || ''}-${res.status || ''}-${res.creation || ''}`;
+    if (this.received_call_event_ids.has(event_id)) {
+      return;
+    }
+    this.received_call_event_ids.add(event_id);
+    this.append_call_event(res.content, res.status);
+    this.refresh_call_state();
+  }
+
+  async handle_start_call() {
+    const $button = $('.whatsapp-call-button');
+    $button.addClass('loading disabled');
+
+    try {
+      const result = await start_whatsapp_call(this.profile.room);
+      this.append_call_event(result.message, result.status);
+      await this.refresh_call_state();
+    } catch (error) {
+      this.set_call_button_state(this.call_state);
+      frappe.msgprint({
+        title: __('Could not start WhatsApp call'),
+        message: get_error_message(
+          error,
+          __('The call could not be started.')
+        ),
+        indicator: 'red',
+      });
+    } finally {
+      $button.removeClass('loading');
+    }
   }
 
   get_typing_changes(res) {

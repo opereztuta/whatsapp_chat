@@ -298,6 +298,17 @@ $height: 582px;
       font-size: $font-size-xs;
       color: var(--text-muted);
     }
+    .chat-call-event {
+      width: fit-content;
+      max-width: 78%;
+      margin: 8px auto;
+      padding: 5px 9px;
+      border-radius: 999px;
+      background: var(--bg-light-gray);
+      color: var(--text-muted);
+      font-size: $font-size-xs;
+      text-align: center;
+    }
     .date-line {
       width: 100%;
       text-align: center;
@@ -329,7 +340,8 @@ $height: 582px;
     }
     .voice-record-button,
     .voice-stop-button,
-    .voice-cancel-button {
+    .voice-cancel-button,
+    .whatsapp-call-button {
       border: 0;
       cursor: pointer;
       height: 2rem;
@@ -344,6 +356,24 @@ $height: 582px;
       background: var(--control-bg);
       color: var(--text-color);
       margin-right: 8px;
+    }
+    .whatsapp-call-button {
+      background: var(--control-bg);
+      color: var(--text-color);
+      margin-left: 8px;
+      margin-right: 0;
+      &.ready {
+        background: var(--green-100);
+        color: var(--green-700);
+      }
+      &.waiting {
+        background: var(--yellow-100);
+        color: var(--yellow-700);
+      }
+      &.disabled {
+        cursor: not-allowed;
+        opacity: 0.45;
+      }
     }
     .voice-recording-state {
       align-items: center;
