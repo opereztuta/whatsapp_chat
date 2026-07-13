@@ -62,6 +62,7 @@ $height: 582px;
 .chat-container {
   padding: 0;
   margin: 0;
+  height: 100%;
 }
 
 .chat-bubble {
@@ -237,10 +238,18 @@ $height: 582px;
 
 .chat-space {
   height: 100%;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  .chat-header {
+    flex: 0 0 auto;
+  }
   .chat-space-container {
     padding: $padding-chat-lr;
     overflow-wrap: break-word;
-    height: calc_height($height, 15px);
+    height: auto;
+    flex: 1 1 auto;
+    min-height: 0;
     overflow-y: scroll;
     .chat-image {
       border-radius: 13px 13px 0px 13px;
@@ -325,9 +334,28 @@ $height: 582px;
   .chat-space-actions {
     padding: 3px $padding-chat-lr $padding-chat-lr $padding-chat-lr;
     display: flex;
-    align-items: center;
+    flex: 0 0 auto;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 6px;
+    min-width: 0;
+    .whatsapp-call-actions,
+    .whatsapp-message-composer {
+      display: flex;
+      align-items: center;
+      min-width: 0;
+      width: 100%;
+    }
+    .whatsapp-call-actions {
+      justify-content: flex-end;
+      gap: 8px;
+    }
+    .whatsapp-message-composer {
+      flex: 0 0 auto;
+    }
     .open-attach-items {
       cursor: pointer;
+      flex: 0 0 24px;
       &.disabled {
         cursor: not-allowed;
         opacity: 0.45;
@@ -337,6 +365,9 @@ $height: 582px;
       margin: 0 10px;
       border-radius: 100px;
       font-size: $font-size-sm;
+      flex: 1 1 auto;
+      min-width: 0;
+      width: auto;
     }
     .voice-record-button,
     .voice-stop-button,
@@ -357,10 +388,38 @@ $height: 582px;
       color: var(--text-color);
       margin-right: 8px;
     }
+    .whatsapp-permission-button {
+      border: 0;
+      border-radius: var(--border-radius);
+      background: var(--control-bg);
+      color: var(--text-color);
+      cursor: pointer;
+      flex: 0 0 auto;
+      font-size: $font-size-xs;
+      height: 2rem;
+      margin-left: 0;
+      padding: 0 10px;
+      white-space: nowrap;
+      &.ready {
+        background: var(--green-100);
+        color: var(--green-700);
+      }
+      &.waiting {
+        background: var(--yellow-100);
+        color: var(--yellow-700);
+      }
+      &.disabled {
+        cursor: not-allowed;
+        opacity: 0.45;
+      }
+      &.hidden {
+        display: none;
+      }
+    }
     .whatsapp-call-button {
       background: var(--control-bg);
       color: var(--text-color);
-      margin-left: 8px;
+      margin-left: 0;
       margin-right: 0;
       &.ready {
         background: var(--green-100);
@@ -407,6 +466,9 @@ $height: 582px;
         background: var(--control-bg);
         color: var(--text-muted);
       }
+    }
+    .message-send-container {
+      flex: 0 0 2rem;
     }
     .voice-record-button.hidden {
       display: none;
