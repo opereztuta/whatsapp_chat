@@ -1,3 +1,4 @@
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import frappe
@@ -6,9 +7,71 @@ from frappe.tests.utils import FrappeTestCase
 from whatsapp_chat.api.message import (
     detect_content_type,
     get_all,
+    get_call_state,
+    request_call_permission,
     send_voice_note,
     _requires_voice_note_transcode,
 )
+
+
+class TestWhatsAppChatCallingAPI(FrappeTestCase):
+    @patch("frappe_whatsapp.utils.calling.get_call_state")
+    @patch("whatsapp_chat.api.message.frappe.get_doc")
+    @patch("whatsapp_chat.api.message.require_contact_access")
+    def test_call_state_requires_room_access_and_uses_contact_number(
+        self, mock_access, mock_get_doc, mock_state
+    ):
+        mock_get_doc.return_value = SimpleNamespace(mobile_no="+15551234567")
+        mock_state.return_value = {
+            "status": "No Permission",
+            "can_call": False,
+            "can_request_permission": True,
+        }
+
+        result = get_call_state("room-a")
+
+        mock_access.assert_called_once_with("room-a")
+        mock_state.assert_called_once_with(
+            phone_number="+15551234567",
+            contact="room-a",
+            agent_user=frappe.session.user,
+        )
+        self.assertFalse(result["can_call"])
+        self.assertTrue(result["can_request_permission"])
+
+    @patch("frappe_whatsapp.utils.calling.request_call_permission")
+    @patch("whatsapp_chat.api.message.frappe.get_doc")
+    @patch("whatsapp_chat.api.message.require_contact_access")
+    def test_permission_endpoint_sends_for_authorized_room(
+        self, mock_access, mock_get_doc, mock_request
+    ):
+        mock_get_doc.return_value = SimpleNamespace(mobile_no="+15551234567")
+        mock_request.return_value = {
+            "status": "Permission Requested",
+            "call": "CALL-1",
+        }
+
+        result = request_call_permission("room-a")
+
+        mock_access.assert_called_once_with("room-a")
+        mock_request.assert_called_once_with(
+            phone_number="+15551234567",
+            contact="room-a",
+            agent_user=frappe.session.user,
+        )
+        self.assertEqual(result["call"], "CALL-1")
+
+    @patch("frappe_whatsapp.utils.calling.request_call_permission")
+    @patch("whatsapp_chat.api.message.require_contact_access")
+    def test_permission_endpoint_stops_when_room_access_is_denied(
+        self, mock_access, mock_request
+    ):
+        mock_access.side_effect = frappe.PermissionError
+
+        with self.assertRaises(frappe.PermissionError):
+            request_call_permission("room-a")
+
+        mock_request.assert_not_called()
 
 
 class TestWhatsAppChatMessageAudio(FrappeTestCase):

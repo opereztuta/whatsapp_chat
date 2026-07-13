@@ -8,6 +8,7 @@ import {
   send_voice_note,
   get_call_state,
   start_whatsapp_call,
+  request_call_permission,
   is_image,
   get_avatar_html,
   mark_message_read,
@@ -155,42 +156,49 @@ export default class ChatSpace {
     this.$chat_actions = $(document.createElement('div'));
     this.$chat_actions.addClass('chat-space-actions');
     const chat_actions_html = `
-			<span class='open-attach-items'>
-				${frappe.utils.icon('attachment', 'lg')}
-			</span>
-			<button type='button' class='whatsapp-call-button disabled' title='${__('Checking call availability')}'>
-				${frappe.utils.icon('es-line-call', 'md')}
-			</button>
-			<input type='file' id='chat-file-uploader'
-				accept='image/*,audio/*,video/mp4,video/3gp,application/pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx'
-				style='display: none;'
-			>
-			<input class='form-control type-message'
-				type='search'
-				placeholder='${__('Type message')}'
-			>
-			<div class='voice-recording-state hidden'>
-				<span class='voice-recording-dot'></span>
-				<span class='voice-recording-timer'>0:00</span>
-				<button type='button' class='voice-stop-button' title='${__('Send voice note')}'>
-					<svg xmlns="http://www.w3.org/2000/svg" width="1.1rem" height="1.1rem" viewBox="0 0 24 24">
-						<path d="M24 0l-6 22-8.129-7.239 7.802-8.234-10.458 7.227-7.215-1.754 24-12zm-15 16.668v7.332l3.258-4.431-3.258-2.901z"/>
-					</svg>
+			<div class='whatsapp-call-actions'>
+				<button type='button' class='whatsapp-permission-button hidden disabled' title='${__('Checking call permission')}'>
+					<span class='whatsapp-permission-label'>${__('Request call permission')}</span>
 				</button>
-				<button type='button' class='voice-cancel-button' title='${__('Cancel recording')}'>
-					${frappe.utils.icon('es-line-delete', 'md')}
+				<button type='button' class='whatsapp-call-button disabled' title='${__('Checking call availability')}'>
+					${frappe.utils.icon('es-line-call', 'md')}
 				</button>
 			</div>
-			<button type='button' class='voice-record-button' title='${__('Record voice note')}'>
-				${frappe.utils.icon('es-solid-audio', 'md')}
-			</button>
-			<div>
-				<span class='message-send-button'>
-					<svg xmlns="http://www.w3.org/2000/svg" width="1.1rem" height="1.1rem" viewBox="0 0 24 24">
-						<path d="M24 0l-6 22-8.129-7.239 7.802-8.234-10.458 7.227-7.215-1.754 24-12zm-15 16.668v7.332l3.258-4.431-3.258-2.901z"/>
-					</svg>
+			<div class='whatsapp-message-composer'>
+				<span class='open-attach-items'>
+					${frappe.utils.icon('attachment', 'lg')}
 				</span>
-			</div>
+				<input type='file' id='chat-file-uploader'
+					accept='image/*,audio/*,video/mp4,video/3gp,application/pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx'
+					style='display: none;'
+				>
+				<input class='form-control type-message'
+					type='search'
+					placeholder='${__('Type message')}'
+				>
+				<div class='voice-recording-state hidden'>
+					<span class='voice-recording-dot'></span>
+					<span class='voice-recording-timer'>0:00</span>
+					<button type='button' class='voice-stop-button' title='${__('Send voice note')}'>
+						<svg xmlns="http://www.w3.org/2000/svg" width="1.1rem" height="1.1rem" viewBox="0 0 24 24">
+							<path d="M24 0l-6 22-8.129-7.239 7.802-8.234-10.458 7.227-7.215-1.754 24-12zm-15 16.668v7.332l3.258-4.431-3.258-2.901z"/>
+						</svg>
+					</button>
+					<button type='button' class='voice-cancel-button' title='${__('Cancel recording')}'>
+						${frappe.utils.icon('es-line-delete', 'md')}
+					</button>
+				</div>
+				<button type='button' class='voice-record-button' title='${__('Record voice note')}'>
+					${frappe.utils.icon('es-solid-audio', 'md')}
+				</button>
+				<div class='message-send-container'>
+					<span class='message-send-button'>
+							<svg xmlns="http://www.w3.org/2000/svg" width="1.1rem" height="1.1rem" viewBox="0 0 24 24">
+								<path d="M24 0l-6 22-8.129-7.239 7.802-8.234-10.458 7.227-7.215-1.754 24-12zm-15 16.668v7.332l3.258-4.431-3.258-2.901z"/>
+							</svg>
+						</span>
+					</div>
+				</div>
 		`;
     this.$chat_actions.html(chat_actions_html);
     this.$chat_space.append(this.$chat_actions);
@@ -281,6 +289,18 @@ export default class ChatSpace {
         return;
       }
       me.handle_start_call();
+    });
+
+    $('.whatsapp-permission-button').on('click', function () {
+      if ($(this).hasClass('disabled') || $(this).hasClass('loading')) {
+        return;
+      }
+      frappe.confirm(
+        __(
+          'Send a WhatsApp call-permission request to this contact? This only sends the permission template; it will not start a call.'
+        ),
+        () => me.handle_request_call_permission()
+      );
     });
 
     $('#chat-file-uploader').on('change', function () {
@@ -538,7 +558,14 @@ export default class ChatSpace {
     });
 
     frappe.realtime.on('whatsapp_call_update', function (res) {
-      if (res.room === me.profile.room) {
+      const profileNumber = (me.profile.opposite_person_email || '').replace(
+        /\D/g,
+        ''
+      );
+      if (
+        res.room === me.profile.room ||
+        (res.phone_number && res.phone_number === profileNumber)
+      ) {
         me.handle_call_update(res);
       }
     });
@@ -568,28 +595,45 @@ export default class ChatSpace {
   }
 
   set_call_button_state(state) {
-    const $button = $('.whatsapp-call-button');
-    if (!$button.length) {
+    const $callButton = $('.whatsapp-call-button');
+    const $permissionButton = $('.whatsapp-permission-button');
+    if (!$callButton.length) {
       return;
     }
 
     const status = state ? state.status : 'Disabled';
     const message = state ? state.message : __('WhatsApp calling unavailable');
-    $button
+    $callButton
       .removeClass('disabled waiting ready loading')
       .attr('title', message || __('Call on WhatsApp'));
+    $permissionButton
+      .removeClass('hidden disabled waiting ready loading')
+      .attr('title', message || __('Request call permission'));
+    $permissionButton
+      .find('.whatsapp-permission-label')
+      .text(__('Request call permission'));
 
-    if (status === 'Ready' || status === 'No Permission') {
-      $button.addClass('ready');
+    if (state && state.can_call) {
+      $callButton.addClass('ready');
+      $permissionButton.addClass('hidden disabled');
       return;
     }
 
     if (status === 'Permission Requested') {
-      $button.addClass('disabled waiting');
+      $callButton.addClass('disabled waiting');
+      $permissionButton.addClass('disabled waiting');
+      $permissionButton
+        .find('.whatsapp-permission-label')
+        .text(__('Waiting for permission'));
       return;
     }
 
-    $button.addClass('disabled');
+    $callButton.addClass('disabled');
+    if (state && state.can_request_permission) {
+      $permissionButton.addClass('ready');
+    } else {
+      $permissionButton.addClass('disabled');
+    }
   }
 
   async refresh_call_state() {
@@ -646,6 +690,29 @@ export default class ChatSpace {
         message: get_error_message(
           error,
           __('The call could not be started.')
+        ),
+        indicator: 'red',
+      });
+    } finally {
+      $button.removeClass('loading');
+    }
+  }
+
+  async handle_request_call_permission() {
+    const $button = $('.whatsapp-permission-button');
+    $button.addClass('loading disabled');
+
+    try {
+      const result = await request_call_permission(this.profile.room);
+      this.append_call_event(result.message, result.status);
+      await this.refresh_call_state();
+    } catch (error) {
+      this.set_call_button_state(this.call_state);
+      frappe.msgprint({
+        title: __('Could not request call permission'),
+        message: get_error_message(
+          error,
+          __('The call-permission request could not be sent.')
         ),
         indicator: 'red',
       });

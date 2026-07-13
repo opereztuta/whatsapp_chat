@@ -601,7 +601,7 @@ def get_call_state(room: str):
 
 @frappe.whitelist()
 def start_call(room: str):
-    """Start or request permission for a WhatsApp outbound call."""
+    """Start a WhatsApp outbound call when permission is already active."""
     require_contact_access(room)
     contact = cast(
         WhatsAppContact,
@@ -611,6 +611,24 @@ def start_call(room: str):
 
     from frappe_whatsapp.utils.calling import start_outbound_call
     return start_outbound_call(
+        phone_number=contact.mobile_no,
+        contact=room,
+        agent_user=frappe.session.user,
+    )
+
+
+@frappe.whitelist()
+def request_call_permission(room: str):
+    """Explicitly send a call-permission template without starting a call."""
+    require_contact_access(room)
+    contact = cast(
+        WhatsAppContact,
+        frappe.get_doc("WhatsApp Contact", room))
+    if not contact.mobile_no:
+        frappe.throw(_("This contact has no mobile number."))
+
+    from frappe_whatsapp.utils.calling import request_call_permission as _request
+    return _request(
         phone_number=contact.mobile_no,
         contact=room,
         agent_user=frappe.session.user,

@@ -126,6 +126,14 @@ async function start_whatsapp_call(room) {
   return res.message;
 }
 
+async function request_call_permission(room) {
+  const res = await frappe.call({
+    method: 'whatsapp_chat.api.message.request_call_permission',
+    args: { room },
+  });
+  return res.message;
+}
+
 async function get_settings() {
   const res = await frappe.call({
     type: 'GET',
@@ -231,6 +239,7 @@ export {
   send_voice_note,
   get_call_state,
   start_whatsapp_call,
+  request_call_permission,
   get_date_from_now,
   is_date_change,
   mark_message_read,
