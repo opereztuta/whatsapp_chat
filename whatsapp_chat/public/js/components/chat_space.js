@@ -681,6 +681,13 @@ export default class ChatSpace {
 
     try {
       const result = await start_whatsapp_call(this.profile.room);
+      if (result.ok === false) {
+        throw new Error(
+          result.failure_reason ||
+          result.message ||
+          __('The call could not be started.')
+        );
+      }
       this.append_call_event(result.message, result.status);
       await this.refresh_call_state();
     } catch (error) {
