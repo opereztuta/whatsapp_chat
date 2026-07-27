@@ -42,7 +42,8 @@ def last_message(doc, method):
     preview = _message_preview(doc)
 
     contact_name = frappe.db.get_value(
-        "Messenger Contact", filters={"sender_id": sender_id}
+        "Messenger Contact",
+        filters={"sender_id": sender_id, "connection": doc.connection},
     )
 
     if contact_name:
@@ -225,6 +226,7 @@ def get_all_messages(room: str):
 
     contact = frappe.get_doc("Messenger Contact", room)
     sender_id = contact.sender_id
+    connection = contact.connection
 
     messages = frappe.db.sql("""
         SELECT
@@ -243,8 +245,9 @@ def get_all_messages(room: str):
             NULL AS attachment_mime_type,
             0 AS is_voice_note
         FROM `tabMeta Messaging Message`
-        WHERE sender_id = %(sender_id)s OR recipient_id = %(sender_id)s
+        WHERE connection = %(connection)s
+          AND (sender_id = %(sender_id)s OR recipient_id = %(sender_id)s)
         ORDER BY creation ASC
-    """, {"sender_id": sender_id}, as_dict=True)
+    """, {"sender_id": sender_id, "connection": connection}, as_dict=True)
 
     return messages

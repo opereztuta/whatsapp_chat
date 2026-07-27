@@ -7,3 +7,4 @@
 
 whatsapp_chat.patches.v0_0_1.create_whatsapp_chat_agent_role
 whatsapp_chat.patches.v0_0_1.add_whatsapp_chat_agent_permissions
+whatsapp_chat.patches.v0_0_2.populate_messenger_contact_keys
