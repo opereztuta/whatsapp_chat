@@ -1,6 +1,8 @@
+from typing import cast
+
 import frappe
 from frappe.utils import now
-from typing import cast
+
 from whatsapp_chat.api.auth import ROLE_AGENT
 from whatsapp_chat.whatsapp_chat.doctype.messenger_contact.messenger_contact import MessengerContact
 
@@ -53,7 +55,10 @@ def last_message(doc, method):
             {"last_message": preview, "is_read": 0},
             update_modified=True,
         )
-        chat_doc = frappe.get_doc("Messenger Contact", str(contact_name))
+        chat_doc = cast(
+            MessengerContact,
+            frappe.get_doc("Messenger Contact", str(contact_name)),
+        )
     else:
         contact_name = sender_id
         if doc.connection:
@@ -64,15 +69,18 @@ def last_message(doc, method):
             except Exception:
                 pass
 
-        chat_doc = frappe.get_doc({
-            "doctype": "Messenger Contact",
-            "sender_id": sender_id,
-            "contact_name": contact_name,
-            "last_message": preview,
-            "is_read": 0,
-            "channel": _normalise_channel(doc.channel),
-            "connection": doc.connection,
-        })
+        chat_doc = cast(
+            MessengerContact,
+            frappe.get_doc({
+                "doctype": "Messenger Contact",
+                "sender_id": sender_id,
+                "contact_name": contact_name,
+                "last_message": preview,
+                "is_read": 0,
+                "channel": _normalise_channel(doc.channel),
+                "connection": doc.connection,
+            }),
+        )
         chat_doc.insert(ignore_permissions=True)
 
     # Don't push realtime for outgoing — agent already sees it locally
@@ -150,7 +158,10 @@ def _require_messenger_contact_access(room: str) -> None:
     if "System Manager" in roles:
         return
 
-    contact = frappe.get_doc("Messenger Contact", room)
+    contact = cast(
+        MessengerContact,
+        frappe.get_doc("Messenger Contact", room),
+    )
     if contact.email == user:
         return
     if (contact.email or "") == "":
@@ -224,7 +235,10 @@ def get_all_messages(room: str):
     """Return all Meta Messaging Messages for a Messenger Contact."""
     _require_messenger_contact_access(room)
 
-    contact = frappe.get_doc("Messenger Contact", room)
+    contact = cast(
+        MessengerContact,
+        frappe.get_doc("Messenger Contact", room),
+    )
     sender_id = contact.sender_id
     connection = contact.connection
 
