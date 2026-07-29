@@ -11,6 +11,7 @@ from whatsapp_chat.api.messenger import (
     download_attachment,
     get_all_messages,
     send_message,
+    send_voice_note,
 )
 from whatsapp_chat.whatsapp_chat.doctype.messenger_contact.messenger_contact import (
     MessengerContact,
@@ -188,6 +189,75 @@ class TestMessengerMedia(FrappeTestCase):
         file_doc.reload()
         self.assertEqual(file_doc.attached_to_doctype, "Messenger Contact")
         self.assertEqual(file_doc.attached_to_name, self.contact.name)
+
+    @patch(
+        "frappe_meta_messenger.utils.message_service.send_uploaded_attachment",
+        return_value="META-MSG-VOICE",
+    )
+    def test_send_private_recording_as_normalized_voice_note(self, mock_send):
+        raw_file = self._make_file(
+            extension="webm",
+            content=b"browser recording",
+        )
+        normalized_file = self._make_file(
+            extension="ogg",
+            content=b"normalized ogg opus",
+        )
+
+        with patch(
+            "whatsapp_chat.api.voice.normalize_voice_note_to_ogg",
+            return_value=normalized_file,
+        ):
+            result = send_voice_note(
+                str(self.contact.name),
+                attachment=str(raw_file.file_url),
+                mime_type="audio/webm; codecs=opus",
+            )
+
+        self.assertEqual(result["name"], "META-MSG-VOICE")
+        self.assertEqual(result["content_type"], "audio")
+        self.assertEqual(result["is_voice_note"], 1)
+        self.assertEqual(
+            result["attachment_mime_type"],
+            "audio/ogg",
+        )
+        kwargs = mock_send.call_args.kwargs
+        self.assertEqual(kwargs["attachment_type"], "audio")
+        self.assertTrue(kwargs["is_voice_note"])
+        self.assertEqual(kwargs["content"], normalized_file.get_content())
+        normalized_file.reload()
+        self.assertEqual(
+            normalized_file.attached_to_doctype,
+            "Meta Messaging Message",
+        )
+        self.assertEqual(normalized_file.attached_to_name, "META-MSG-VOICE")
+        self.assertFalse(frappe.db.exists("File", raw_file.name))
+
+    def test_voice_note_rejects_public_and_instagram_files(self):
+        public_file = self._make_file(
+            is_private=0,
+            extension="ogg",
+            content=b"audio",
+        )
+        with self.assertRaises(frappe.ValidationError):
+            send_voice_note(
+                str(self.contact.name),
+                attachment=str(public_file.file_url),
+                mime_type="audio/ogg",
+            )
+
+        private_file = self._make_file(
+            extension="ogg",
+            content=b"audio",
+        )
+        self.contact.channel = "Instagram"
+        self.contact.save(ignore_permissions=True)
+        with self.assertRaises(frappe.ValidationError):
+            send_voice_note(
+                str(self.contact.name),
+                attachment=str(private_file.file_url),
+                mime_type="audio/ogg",
+            )
 
     @patch("frappe.utils.response.send_private_file")
     def test_private_download_is_scoped_to_room_and_message(

@@ -22,7 +22,7 @@ def _message_preview(doc) -> str:
 
     labels = {
         "image": "Image",
-        "audio": "Audio",
+        "audio": "Voice note" if doc.get("is_voice_note") else "Audio",
         "video": "Video",
         "file": "Document",
         "sticker": "Sticker",
@@ -71,6 +71,7 @@ def _message_data(doc, chat_doc, *, media_update: bool = False) -> dict:
         "attachment_name": doc.attachment_name,
         "attachment_mime_type": doc.attachment_mime_type,
         "attachment_status": doc.attachment_status,
+        "is_voice_note": int(doc.get("is_voice_note") or 0),
         "caption": None,
         "preview": _message_preview(doc),
         "messenger": True,
@@ -370,6 +371,7 @@ def send_message(
                 "provider_attachment_id",
             ),
             "caption": None,
+            "is_voice_note": 0,
         }
 
     from frappe_meta_messenger.utils.message_service import send_text
@@ -384,6 +386,147 @@ def send_message(
         "content": content,
         "direction": "outgoing",
         "content_type": "text",
+        "is_voice_note": 0,
+    }
+
+
+@frappe.whitelist()
+def send_voice_note(
+    room: str,
+    attachment: str,
+    mime_type: str | None = None,
+):
+    """Normalize and send a private browser recording to Messenger."""
+    _require_messenger_contact_access(room)
+
+    attachment = str(attachment or "").strip()
+    if not attachment:
+        frappe.throw(_("Voice note attachment is required."))
+
+    contact = cast(MessengerContact, frappe.get_doc("Messenger Contact", room))
+    if _normalise_channel(str(contact.channel)) != "Messenger":
+        frappe.throw(
+            _("Voice notes are available for Messenger conversations only."),
+            title=_("Unsupported Attachment"),
+        )
+    if not contact.connection:
+        frappe.throw(_("This contact has no Meta Connection configured."))
+
+    file_record = get_file_record(attachment)
+    if not file_record:
+        frappe.throw(
+            _("Could not find the uploaded voice note."),
+            title=_("Voice Note Upload Failed"),
+        )
+    if (
+        file_record.get("attached_to_doctype") != "Messenger Contact"
+        or file_record.get("attached_to_name") != room
+    ):
+        raise frappe.PermissionError(
+            _("This voice note does not belong to the conversation.")
+        )
+    if not int(file_record.get("is_private") or 0):
+        frappe.throw(
+            _("Messenger voice recordings must be uploaded privately."),
+            title=_("Invalid Voice Note"),
+        )
+
+    max_file_size = get_max_file_size()
+    if int(file_record.get("file_size") or 0) > max_file_size:
+        frappe.throw(
+            _("Voice note exceeds the site's maximum file size."),
+            title=_("Voice Note Too Large"),
+        )
+
+    content_type, _detected_mime = resolve_attachment_content_type(
+        attachment,
+        explicit_mime_type=mime_type,
+        explicit_content_type="audio",
+    )
+    if content_type != "audio":
+        frappe.throw(
+            _("Voice notes must be audio files."),
+            title=_("Invalid Voice Note"),
+        )
+
+    from whatsapp_chat.api.voice import (
+        VOICE_NOTE_MIME_TYPE,
+        normalize_voice_note_to_ogg,
+    )
+
+    normalized_file = normalize_voice_note_to_ogg(
+        attachment=attachment,
+        attached_to_doctype="Messenger Contact",
+        attached_to_name=room,
+        max_bytes=max_file_size,
+        log_prefix="Messenger voice note",
+    )
+    normalized_content = normalized_file.get_content()
+    if isinstance(normalized_content, str):
+        normalized_content = normalized_content.encode("utf-8")
+    if not isinstance(normalized_content, bytes) or not normalized_content:
+        frappe.throw(
+            _("Could not read the normalized voice note."),
+            title=_("Voice Note Conversion Failed"),
+        )
+
+    from frappe_meta_messenger.utils.message_service import (
+        send_uploaded_attachment,
+    )
+
+    message_name = send_uploaded_attachment(
+        connection_name=str(contact.connection),
+        recipient_id=contact.sender_id,
+        content=normalized_content,
+        attachment_type="audio",
+        attachment_name=str(normalized_file.file_name),
+        attachment_mime_type=VOICE_NOTE_MIME_TYPE,
+        local_attachment=str(normalized_file.file_url),
+        is_voice_note=True,
+    )
+    frappe.db.set_value(
+        "File",
+        normalized_file.name,
+        {
+            "attached_to_doctype": "Meta Messaging Message",
+            "attached_to_name": message_name,
+            "attached_to_field": "attachment",
+        },
+        update_modified=False,
+    )
+
+    if str(file_record["name"]) != str(normalized_file.name):
+        try:
+            frappe.delete_doc(
+                "File",
+                str(file_record["name"]),
+                ignore_permissions=True,
+            )
+        except Exception:
+            frappe.log_error(
+                frappe.get_traceback(),
+                "Messenger voice note: raw upload cleanup failed",
+            )
+
+    query = urlencode({"room": room, "message_name": message_name})
+    return {
+        "name": message_name,
+        "content": (
+            "/api/method/whatsapp_chat.api.messenger."
+            f"download_attachment?{query}"
+        ),
+        "direction": "outgoing",
+        "content_type": "audio",
+        "attachment_name": normalized_file.file_name,
+        "attachment_mime_type": VOICE_NOTE_MIME_TYPE,
+        "attachment_status": "Ready",
+        "provider_attachment_id": frappe.db.get_value(
+            "Meta Messaging Message",
+            message_name,
+            "provider_attachment_id",
+        ),
+        "caption": None,
+        "is_voice_note": 1,
     }
 
 
@@ -399,7 +542,12 @@ def get_all_messages(room: str):
     sender_id = contact.sender_id
     connection = contact.connection
 
-    messages = frappe.db.sql("""
+    is_voice_note_select = (
+        "COALESCE(is_voice_note, 0) AS is_voice_note"
+        if frappe.get_meta("Meta Messaging Message").has_field("is_voice_note")
+        else "0 AS is_voice_note"
+    )
+    messages = frappe.db.sql(f"""
         SELECT
             name,
             creation,
@@ -419,7 +567,7 @@ def get_all_messages(room: str):
             attachment_name,
             attachment_mime_type,
             attachment_status,
-            0 AS is_voice_note
+            {is_voice_note_select}
         FROM `tabMeta Messaging Message`
         WHERE connection = %(connection)s
           AND (sender_id = %(sender_id)s OR recipient_id = %(sender_id)s)

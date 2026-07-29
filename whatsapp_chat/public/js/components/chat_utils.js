@@ -225,6 +225,18 @@ async function send_messenger_message(room, content, attachment, mime_type) {
   return res.message;
 }
 
+async function send_messenger_voice_note(room, attachment, mime_type) {
+  const res = await frappe.call({
+    method: 'whatsapp_chat.api.messenger.send_voice_note',
+    args: {
+      room,
+      attachment,
+      mime_type: mime_type || null,
+    },
+  });
+  return res.message;
+}
+
 async function get_messenger_rooms() {
   const res = await frappe.call({
     type: 'GET',
@@ -301,5 +313,6 @@ export {
   get_messenger_rooms,
   get_messenger_messages,
   send_messenger_message,
+  send_messenger_voice_note,
   set_messenger_notification_count,
 };

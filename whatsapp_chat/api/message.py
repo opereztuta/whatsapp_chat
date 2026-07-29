@@ -1,9 +1,4 @@
 import frappe
-import json
-import os
-import shutil
-import subprocess
-import tempfile
 from frappe import _
 from frappe.utils import cint
 from whatsapp_chat.api.auth import require_contact_access, ROLE_AGENT
@@ -15,9 +10,12 @@ from frappe.utils import now
 from whatsapp_chat.api.media import (
     detect_content_type,
     detect_media_mime_type,
-    get_file_record,
-    normalize_mime_type,
     resolve_attachment_content_type,
+)
+from whatsapp_chat.api.voice import (
+    VOICE_NOTE_MIME_WITH_CODEC,
+    get_file_doc_for_attachment,
+    normalize_voice_note_to_ogg,
 )
 
 
@@ -40,74 +38,6 @@ def _ensure_supported_outbound_media(
 def _set_if_has_field(doc, fieldname: str, value: Any) -> None:
     if doc.meta.has_field(fieldname):
         doc.set(fieldname, value)
-
-
-def _get_file_doc_for_attachment(attachment: str):
-    file_record = get_file_record(attachment)
-    if not file_record:
-        return None
-
-    return frappe.get_doc("File", file_record["name"])
-
-
-def _get_local_file_path(file_doc) -> str:
-    file_path = str(file_doc.get_full_path())
-    if file_path.startswith(("http://", "https://")):
-        frappe.throw(
-            _("Remote voice note files cannot be converted before sending."),
-            title=_("Unsupported Voice Note Format"),
-        )
-    return file_path
-
-
-def _get_voice_note_audio_metadata(file_doc) -> dict[str, str]:
-    """Probe uploaded audio so browser MIME labels are not blindly trusted."""
-    ffprobe_path = shutil.which("ffprobe")
-    if not ffprobe_path:
-        return {}
-
-    file_path = _get_local_file_path(file_doc)
-    command = [
-        ffprobe_path,
-        "-v",
-        "error",
-        "-of",
-        "json",
-        "-show_format",
-        "-show_streams",
-        file_path,
-    ]
-    try:
-        result = subprocess.run(
-            command,
-            check=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            timeout=30,
-        )
-        payload = json.loads(result.stdout.decode("utf-8") or "{}")
-    except Exception:
-        frappe.log_error(
-            frappe.get_traceback(),
-            "WhatsApp voice note ffprobe failed",
-        )
-        return {}
-
-    streams = payload.get("streams") or []
-    audio_stream = next(
-        (
-            stream for stream in streams
-            if isinstance(stream, dict) and stream.get("codec_type") == "audio"
-        ),
-        {},
-    )
-    format_payload = payload.get("format") or {}
-
-    metadata = {
-        "codec_name": str(audio_stream.get("codec_name") or "").lower(),
-        "format_name": str(format_payload.get("format_name") or "").lower(),
-    }
-    return {key: value for key, value in metadata.items() if value}
 
 
 def _requires_voice_note_transcode(
@@ -137,96 +67,13 @@ def _requires_voice_note_transcode(
 
 
 def _transcode_voice_note_to_ogg(*, room: str, attachment: str) -> str:
-    ffmpeg_path = shutil.which("ffmpeg")
-    if not ffmpeg_path:
-        frappe.throw(
-            _("Your browser recorded WebM audio, which WhatsApp cannot send "
-              "directly. Ask an administrator to install ffmpeg on the "
-              "server, or use a browser that records Ogg/Opus or MP4 audio."),
-            title=_("Unsupported Voice Note Format"),
-        )
-
-    file_doc = _get_file_doc_for_attachment(attachment)
-    if not file_doc:
-        frappe.throw(
-            _("Could not find the uploaded voice note file."),
-            title=_("Voice Note Upload Failed"),
-        )
-
-    input_path = _get_local_file_path(file_doc)
-    file_size = os.path.getsize(input_path)
-    if file_size > MAX_VOICE_NOTE_BYTES:
-        frappe.throw(
-            _("Voice notes must be 16 MB or smaller."),
-            title=_("Voice Note Too Large"),
-        )
-
-    with tempfile.TemporaryDirectory(prefix="whatsapp-voice-") as temp_dir:
-        output_path = os.path.join(temp_dir, "voice-note.ogg")
-        # WhatsApp voice notes must be Ogg/Opus, mono, 48 kHz.
-        # -application voip biases the encoder toward speech.
-        command = [
-            ffmpeg_path,
-            "-y",
-            "-i",
-            input_path,
-            "-vn",
-            "-map_metadata",
-            "-1",
-            "-ac",
-            "1",
-            "-ar",
-            "48000",
-            "-c:a",
-            "libopus",
-            "-b:a",
-            "64k",
-            "-application",
-            "voip",
-            "-f",
-            "ogg",
-            output_path,
-        ]
-        try:
-            subprocess.run(
-                command,
-                check=True,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                timeout=60,
-            )
-        except Exception:
-            frappe.log_error(
-                frappe.get_traceback(),
-                "WhatsApp voice note ffmpeg conversion failed",
-            )
-            frappe.throw(
-                _("Could not convert this WebM recording into a WhatsApp "
-                  "audio message. Please try another browser or contact an "
-                  "administrator."),
-                title=_("Voice Note Conversion Failed"),
-            )
-
-        with open(output_path, "rb") as converted_file:
-            converted_content = converted_file.read()
-
-    if len(converted_content) > MAX_VOICE_NOTE_BYTES:
-        frappe.throw(
-            _("Converted voice note is larger than WhatsApp's 16 MB limit."),
-            title=_("Voice Note Too Large"),
-        )
-
-    from frappe.core.doctype.file.file import File
-
-    converted_doc = cast(File, frappe.get_doc({
-        "doctype": "File",
-        "file_name": f"voice-note-{frappe.generate_hash(length=10)}.ogg",
-        "attached_to_doctype": "WhatsApp Contact",
-        "attached_to_name": room,
-        "content": converted_content,
-        "is_private": cint(file_doc.get("is_private")),
-    }))
-    converted_doc.save(ignore_permissions=True)
+    converted_doc = normalize_voice_note_to_ogg(
+        attachment=attachment,
+        attached_to_doctype="WhatsApp Contact",
+        attached_to_name=room,
+        max_bytes=MAX_VOICE_NOTE_BYTES,
+        log_prefix="WhatsApp voice note",
+    )
     return str(converted_doc.file_url)
 
 
@@ -244,7 +91,7 @@ def _prepare_voice_note_attachment(
             title=_("Unsupported Voice Note Format"),
         )
 
-    file_doc = _get_file_doc_for_attachment(attachment)
+    file_doc = get_file_doc_for_attachment(attachment)
     if not file_doc:
         frappe.throw(
             _("Could not find the uploaded voice note file."),
@@ -261,7 +108,7 @@ def _prepare_voice_note_attachment(
         room=room,
         attachment=attachment,
     )
-    detected_mime_type = "audio/ogg; codecs=opus"
+    detected_mime_type = VOICE_NOTE_MIME_WITH_CODEC
 
     return attachment, detected_mime_type
 

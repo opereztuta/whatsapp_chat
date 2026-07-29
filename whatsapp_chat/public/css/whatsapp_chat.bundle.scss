@@ -399,6 +399,11 @@ $height: 582px;
       background: var(--control-bg);
       color: var(--text-color);
       margin-right: 8px;
+      &.disabled,
+      &:disabled {
+        cursor: not-allowed;
+        opacity: 0.45;
+      }
     }
     .whatsapp-permission-button {
       border: 0;

@@ -8,13 +8,16 @@ import {
   get_avatar_html,
   get_error_message,
   upload_chat_file,
+  send_messenger_voice_note,
 } from './chat_utils';
+import VoiceRecorder, { get_voice_recorder_html } from './voice_recorder';
 
 export default class MessengerSpace {
   constructor(opts) {
     this.messenger_list = opts.messenger_list;
     this.$wrapper = opts.$wrapper;
     this.profile = opts.profile;
+    this.voice_recorder_controller = null;
     this.setup();
   }
 
@@ -49,9 +52,11 @@ export default class MessengerSpace {
   setup_actions() {
     this.$chat_actions = $(document.createElement('div'));
     this.$chat_actions.addClass('chat-space-actions');
-    const accept = (this.profile.channel || '').toLowerCase() === 'instagram'
+    const is_instagram = (this.profile.channel || '').toLowerCase() === 'instagram';
+    const accept = is_instagram
       ? 'image/*,video/mp4'
       : 'image/*,audio/*,video/mp4,video/3gp,application/pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx';
+    const voice_recorder = is_instagram ? '' : get_voice_recorder_html();
     this.$chat_actions.html(`
       <div class='messenger-message-composer'>
         <span class='messenger-open-attach' title='${__('Attach file')}'>
@@ -63,6 +68,7 @@ export default class MessengerSpace {
           type='text'
           placeholder='${__('Type message')}'
         >
+        ${voice_recorder}
         <div>
           <span class='message-send-button'>
             <svg xmlns="http://www.w3.org/2000/svg" width="1.1rem" height="1.1rem" viewBox="0 0 24 24">
@@ -112,7 +118,8 @@ export default class MessengerSpace {
         element.attachment_name,
         element.attachment_status,
         element.name,
-        element.provider_attachment_url
+        element.provider_attachment_url,
+        element.is_voice_note
       ).prop('outerHTML');
       this.prevMessage = element;
     });
@@ -138,7 +145,8 @@ export default class MessengerSpace {
     attachment_name,
     attachment_status,
     message_name,
-    provider_attachment_url
+    provider_attachment_url,
+    is_voice_note
   ) {
     const message_class = type === 'recipient' ? 'recipient-message' : 'sender-message';
     const $el = $(document.createElement('div')).addClass(message_class);
@@ -193,7 +201,9 @@ export default class MessengerSpace {
       $content = $(document.createElement('div'))
         .addClass('chat-audio-message')
         .append(
-          $(document.createElement('div')).addClass('chat-audio-label').text(__('Audio'))
+          $(document.createElement('div'))
+            .addClass('chat-audio-label')
+            .text(is_voice_note ? __('Voice note') : __('Audio'))
         )
         .append($audio);
     } else if (is_url && file_name && normalized_type !== 'text') {
@@ -242,7 +252,8 @@ export default class MessengerSpace {
         res.attachment_name,
         res.attachment_status,
         res.name,
-        res.provider_attachment_url
+        res.provider_attachment_url,
+        res.is_voice_note
       );
       if (res.media_update && res.name) {
         const $existing = me.$chat_space_container
@@ -271,6 +282,10 @@ export default class MessengerSpace {
   }
 
   destroy_socket_events() {
+    if (this.voice_recorder_controller) {
+      this.voice_recorder_controller.destroy();
+      this.voice_recorder_controller = null;
+    }
     frappe.realtime.off('latest_messenger_updates');
     frappe.realtime.off(this.profile.room);
   }
@@ -299,7 +314,8 @@ export default class MessengerSpace {
           null,
           null,
           sent.name,
-          null
+          null,
+          sent.is_voice_note
         )
       );
       scroll_to_bottom(this.$chat_space_container);
@@ -338,7 +354,8 @@ export default class MessengerSpace {
           sent.attachment_name,
           sent.attachment_status,
           sent.name,
-          null
+          null,
+          sent.is_voice_note
         )
       );
       scroll_to_bottom(this.$chat_space_container);
@@ -347,8 +364,73 @@ export default class MessengerSpace {
     }
   }
 
+  async handle_recorded_voice(file, mime_type) {
+    const local_id = `voice-${Date.now()}`;
+    const $pending = this.make_message(
+      __('Sending voice note…'),
+      get_time(),
+      'recipient',
+      'text',
+      null,
+      null,
+      null,
+      null,
+      null,
+      1
+    ).attr('data-local-message', local_id);
+    this.$chat_space_container.append($pending);
+    scroll_to_bottom(this.$chat_space_container);
+
+    try {
+      const file_doc = await upload_chat_file(
+        file,
+        'Messenger Contact',
+        this.profile.room,
+        true
+      );
+      const sent = await send_messenger_voice_note(
+        this.profile.room,
+        file_doc.file_url,
+        mime_type
+      );
+      $pending.replaceWith(
+        this.make_message(
+          sent.content,
+          get_time(),
+          'recipient',
+          sent.content_type,
+          sent.attachment_mime_type,
+          sent.attachment_name,
+          sent.attachment_status,
+          sent.name,
+          null,
+          sent.is_voice_note
+        )
+      );
+      scroll_to_bottom(this.$chat_space_container);
+    } catch (error) {
+      $pending
+        .find('.message-bubble')
+        .addClass('text-muted')
+        .text(__('Voice note failed to send'));
+      throw error;
+    }
+  }
+
   setup_events() {
     const me = this;
+    if ((this.profile.channel || '').toLowerCase() !== 'instagram') {
+      this.voice_recorder_controller = new VoiceRecorder({
+        $scope: this.$chat_space,
+        get_error_message,
+        attach_selector: '.messenger-open-attach',
+        on_send: (file, mime_type) => this.handle_recorded_voice(
+          file,
+          mime_type
+        ),
+      });
+      this.voice_recorder_controller.bind();
+    }
     this.$chat_space.find('.messenger-back-button').on('click', function () {
       me.messenger_list.render_messages();
       me.messenger_list.render();
