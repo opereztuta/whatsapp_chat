@@ -13,6 +13,7 @@ import {
   get_avatar_html,
   mark_message_read,
   get_error_message,
+  upload_chat_file,
 } from './chat_utils';
 
 export default class ChatSpace {
@@ -211,57 +212,11 @@ export default class ChatSpace {
   }
 
   upload_file(file) {
-    return new Promise((resolve, reject) => {
-      let xhr = new XMLHttpRequest();
-
-      xhr.addEventListener('error', () => {
-        reject(new Error(__('Internal Server Error')));
-      });
-      xhr.onreadystatechange = () => {
-        if (xhr.readyState == XMLHttpRequest.DONE) {
-          if (xhr.status === 200) {
-            let r = null;
-            let file_doc = null;
-            try {
-              r = JSON.parse(xhr.responseText);
-              if (r.message.doctype === 'File') {
-                file_doc = r.message;
-              }
-            } catch (e) {
-              r = xhr.responseText;
-            }
-            if (file_doc === null) {
-              reject(new Error(__('File upload failed!')));
-              return;
-            }
-            resolve(file_doc);
-          } else {
-            try {
-              const error = JSON.parse(xhr.responseText);
-              const messages = JSON.parse(error._server_messages);
-              const errorObj = JSON.parse(messages[0]);
-              reject(new Error(__(errorObj.message)));
-            } catch (e) {
-              reject(new Error(__('File upload failed!')));
-            }
-          }
-        }
-      };
-
-      xhr.open('POST', '/api/method/upload_file', true);
-      xhr.setRequestHeader('Accept', 'application/json');
-      xhr.setRequestHeader('X-Frappe-CSRF-Token', frappe.csrf_token);
-
-      let form_data = new FormData();
-
-      form_data.append('file', file.file_obj, file.name);
-      form_data.append('is_private', +false);
-
-      form_data.append('doctype', 'WhatsApp Contact');
-      form_data.append('docname', this.profile.room);
-      form_data.append('optimize', +true);
-      xhr.send(form_data);
-    });
+    return upload_chat_file(
+      file.file_obj,
+      'WhatsApp Contact',
+      this.profile.room
+    );
   }
 
   setup_events() {

@@ -7,14 +7,17 @@
 
 ## Overview
 
-WhatsApp Chat provides a WhatsApp-like chat interface directly within Frappe Desk, enabling your team to send and receive WhatsApp messages without leaving the ERP system.
+WhatsApp Chat provides a WhatsApp-like chat interface directly within Frappe
+Desk, enabling your team to send and receive WhatsApp, Messenger, and Instagram
+messages without leaving the ERP system.
 
 ## Features
 
 - **Real-time Messaging** - Send and receive WhatsApp messages with instant updates via Socket.IO
 - **Chat Interface** - Familiar WhatsApp-like UI integrated into Frappe Desk
 - **Contact Management** - Automatic contact creation from incoming messages
-- **Media Support** - Send and receive images, documents, audio, and video
+- **Media Support** - Send and receive images, documents, audio, and video on WhatsApp and Messenger; Instagram supports images and video
+- **Private Meta Uploads** - Messenger and Instagram files are stored privately and uploaded directly to Meta without requiring public crawler access
 - **Auto Read Receipts** - Automatically send read receipts to WhatsApp when viewing messages (based on WhatsApp Account settings)
 - **Sound Notifications** - Audio alerts for new messages
 - **Multi-user Support** - Assign contacts to specific users for follow-up

@@ -1,9 +1,16 @@
 from typing import cast
+from urllib.parse import urlencode
 
 import frappe
-from frappe.utils import now
+from frappe import _
+from frappe.core.api.file import get_max_file_size
+from frappe.utils import get_url, now
 
 from whatsapp_chat.api.auth import ROLE_AGENT
+from whatsapp_chat.api.media import (
+    get_file_record,
+    resolve_attachment_content_type,
+)
 from whatsapp_chat.whatsapp_chat.doctype.messenger_contact.messenger_contact import MessengerContact
 
 
@@ -21,6 +28,90 @@ def _message_preview(doc) -> str:
         "sticker": "Sticker",
     }
     return labels.get(message_type, message_type.capitalize())
+
+
+def _normalized_content_type(value: str | None) -> str:
+    content_type = str(value or "text").lower()
+    return "file" if content_type == "attachment" else content_type
+
+
+def _stored_attachment_url(doc, room: str) -> str | None:
+    attachment = str(doc.attachment or "")
+    if not attachment:
+        return None
+    if attachment.startswith("/private/"):
+        query = urlencode({"room": room, "message_name": doc.name})
+        return (
+            "/api/method/whatsapp_chat.api.messenger.download_attachment?"
+            f"{query}"
+        )
+    return attachment
+
+
+def _message_data(doc, chat_doc, *, media_update: bool = False) -> dict:
+    content_type = _normalized_content_type(doc.message_type)
+    stored_url = _stored_attachment_url(doc, str(chat_doc.name))
+    content = (
+        doc.text or ""
+        if content_type == "text"
+        else stored_url or doc.attachment_url or doc.text or ""
+    )
+    return {
+        "name": doc.name,
+        "content": content,
+        "provider_attachment_url": doc.attachment_url,
+        "provider_attachment_id": doc.provider_attachment_id,
+        "creation": str(doc.creation or now()),
+        "room": chat_doc.name,
+        "contact_name": chat_doc.contact_name,
+        "channel": chat_doc.channel,
+        "sender_user_no": doc.sender_id,
+        "user": "Guest",
+        "content_type": content_type,
+        "attachment_name": doc.attachment_name,
+        "attachment_mime_type": doc.attachment_mime_type,
+        "attachment_status": doc.attachment_status,
+        "caption": None,
+        "preview": _message_preview(doc),
+        "messenger": True,
+        "media_update": media_update,
+    }
+
+
+def _target_users(chat_doc) -> set[str]:
+    users = set(
+        frappe.get_all(
+            "Has Role",
+            filters={"role": "System Manager", "parenttype": "User"},
+            pluck="parent",
+        )
+    )
+    if chat_doc.email:
+        users.add(chat_doc.email)
+    else:
+        users.update(
+            frappe.get_all(
+                "Has Role",
+                filters={"role": ROLE_AGENT, "parenttype": "User"},
+                pluck="parent",
+            )
+        )
+    return users
+
+
+def _publish_message(doc, chat_doc, *, media_update: bool = False) -> None:
+    message_data = _message_data(doc, chat_doc, media_update=media_update)
+    for user in _target_users(chat_doc):
+        frappe.publish_realtime(
+            "latest_messenger_updates",
+            message_data,
+            user=user,
+        )
+        frappe.publish_realtime(
+            chat_doc.name,
+            message_data,
+            user=user,
+        )
 
 
 def last_message(doc, method):
@@ -87,57 +178,29 @@ def last_message(doc, method):
     if is_outgoing:
         return
 
-    content_type = (doc.message_type or "text").lower()
-    content = (
-        doc.text or ""
-        if content_type == "text"
-        else doc.attachment_url or doc.text or ""
+    _publish_message(doc, chat_doc)
+
+
+def attachment_updated(doc, method):
+    """Publish a replacement event when async inbound media becomes terminal."""
+    if (doc.direction or "").lower() != "incoming":
+        return
+    if doc.attachment_status not in {"Ready", "Failed"}:
+        return
+    if not (
+        doc.has_value_changed("attachment_status")
+        or doc.has_value_changed("attachment")
+    ):
+        return
+
+    contact_name = frappe.db.get_value(
+        "Messenger Contact",
+        filters={"sender_id": doc.sender_id, "connection": doc.connection},
     )
-
-    message_data = {
-        "content": content,
-        "creation": now(),
-        "room": chat_doc.name,
-        "contact_name": chat_doc.contact_name,
-        "sender_user_no": sender_id,
-        "user": "Guest",
-        "content_type": content_type,
-        "caption": None,
-        "preview": preview,
-        "messenger": True,   # lets the UI distinguish from WhatsApp
-    }
-
-    # Determine target users (same logic as WhatsApp)
-    target_users = set()
-
-    system_managers = frappe.get_all(
-        "Has Role",
-        filters={"role": "System Manager", "parenttype": "User"},
-        pluck="parent",
-    )
-    target_users.update(system_managers)
-
-    if chat_doc.email:
-        target_users.add(chat_doc.email)
-    else:
-        agents = frappe.get_all(
-            "Has Role",
-            filters={"role": ROLE_AGENT, "parenttype": "User"},
-            pluck="parent",
-        )
-        target_users.update(agents)
-
-    for user in target_users:
-        frappe.publish_realtime(
-            "latest_messenger_updates",
-            message_data,
-            user=user,
-        )
-        frappe.publish_realtime(
-            chat_doc.name,
-            message_data,
-            user=user,
-        )
+    if not contact_name:
+        return
+    chat_doc = frappe.get_doc("Messenger Contact", contact_name)
+    _publish_message(doc, chat_doc, media_update=True)
 
 
 def _normalise_channel(channel: str | None) -> str:
@@ -204,26 +267,120 @@ def mark_as_read(room: str):
 
 
 @frappe.whitelist()
-def send_message(room: str, content: str):
+def send_message(
+    room: str,
+    content: str = "",
+    attachment: str | None = None,
+    mime_type: str | None = None,
+):
     _require_messenger_contact_access(room)
 
     content = (content or "").strip()
-    if not content:
-        frappe.throw(frappe._("Message cannot be empty."))
+    attachment = str(attachment or "").strip() or None
+    if attachment and content:
+        frappe.throw(_("Send text and attachments as separate messages."))
+    if not attachment and not content:
+        frappe.throw(_("Message cannot be empty."))
 
     contact = cast(MessengerContact, frappe.get_doc("Messenger Contact", room))
 
     if not contact.connection:
         frappe.throw(frappe._("This contact has no Meta Connection configured."))
 
+    if attachment:
+        file_record = get_file_record(attachment)
+        if not file_record:
+            frappe.throw(_("Could not find the uploaded attachment."))
+        if (
+            file_record.get("attached_to_doctype") != "Messenger Contact"
+            or file_record.get("attached_to_name") != room
+        ):
+            raise frappe.PermissionError(
+                _("This attachment does not belong to the conversation.")
+            )
+        if int(file_record.get("file_size") or 0) > get_max_file_size():
+            frappe.throw(
+                _("Attachment exceeds the site's maximum file size."),
+                title=_("Attachment Too Large"),
+            )
+
+        detected_type, detected_mime = resolve_attachment_content_type(
+            attachment,
+            explicit_mime_type=mime_type,
+        )
+        meta_type = "file" if detected_type == "document" else detected_type
+        if (
+            _normalise_channel(str(contact.channel)) == "Instagram"
+            and meta_type not in {"image", "video"}
+        ):
+            frappe.throw(
+                _("Instagram supports image and video attachments only."),
+                title=_("Unsupported Attachment"),
+            )
+
+        file_doc = frappe.get_doc("File", file_record["name"])
+        file_content = file_doc.get_content()
+        if isinstance(file_content, str):
+            file_content = file_content.encode("utf-8")
+        if not isinstance(file_content, bytes) or not file_content:
+            frappe.throw(
+                _("Could not read the uploaded attachment."),
+                title=_("Invalid Attachment"),
+            )
+
+        from frappe_meta_messenger.utils.message_service import (
+            send_uploaded_attachment,
+        )
+
+        message_name = send_uploaded_attachment(
+            connection_name=str(contact.connection),
+            recipient_id=contact.sender_id,
+            content=file_content,
+            attachment_type=meta_type,
+            attachment_name=str(file_record.get("file_name") or ""),
+            attachment_mime_type=str(detected_mime or ""),
+            local_attachment=attachment,
+        )
+        frappe.db.set_value(
+            "File",
+            file_record["name"],
+            {
+                "attached_to_doctype": "Meta Messaging Message",
+                "attached_to_name": message_name,
+                "attached_to_field": "attachment",
+            },
+            update_modified=False,
+        )
+        query = urlencode({"room": room, "message_name": message_name})
+        content_url = (
+            "/api/method/whatsapp_chat.api.messenger."
+            f"download_attachment?{query}"
+        )
+        return {
+            "name": message_name,
+            "content": content_url,
+            "direction": "outgoing",
+            "content_type": meta_type,
+            "attachment_name": file_record.get("file_name"),
+            "attachment_mime_type": detected_mime,
+            "attachment_status": "Ready",
+            "provider_attachment_id": frappe.db.get_value(
+                "Meta Messaging Message",
+                message_name,
+                "provider_attachment_id",
+            ),
+            "caption": None,
+        }
+
     from frappe_meta_messenger.utils.message_service import send_text
-    send_text(
+    message_name = send_text(
         connection_name=str(contact.connection),
         recipient_id=contact.sender_id,
         text=content,
     )
 
     return {
+        "name": message_name,
         "content": content,
         "direction": "outgoing",
         "content_type": "text",
@@ -252,11 +409,16 @@ def get_all_messages(room: str):
             END AS sender_user_no,
             CASE WHEN LOWER(COALESCE(message_type, 'text')) = 'text'
                       THEN COALESCE(text, '')
-                 ELSE COALESCE(attachment_url, text, '')
+                 ELSE COALESCE(attachment, attachment_url, text, '')
             END AS content,
             LOWER(COALESCE(message_type, 'text')) AS content_type,
             NULL AS caption,
-            NULL AS attachment_mime_type,
+            attachment,
+            attachment_url AS provider_attachment_url,
+            provider_attachment_id,
+            attachment_name,
+            attachment_mime_type,
+            attachment_status,
             0 AS is_voice_note
         FROM `tabMeta Messaging Message`
         WHERE connection = %(connection)s
@@ -264,4 +426,60 @@ def get_all_messages(room: str):
         ORDER BY creation ASC
     """, {"sender_id": sender_id, "connection": connection}, as_dict=True)
 
+    for message in messages:
+        message.content_type = _normalized_content_type(message.content_type)
+        if (
+            message.get("attachment")
+            and str(message.attachment).startswith("/private/")
+        ):
+            query = urlencode({"room": room, "message_name": message.name})
+            message.content = (
+                "/api/method/whatsapp_chat.api.messenger."
+                f"download_attachment?{query}"
+            )
     return messages
+
+
+@frappe.whitelist()
+def download_attachment(room: str, message_name: str):
+    """Serve one stored private attachment after conversation access checks."""
+    _require_messenger_contact_access(room)
+    contact = cast(
+        MessengerContact,
+        frappe.get_doc("Messenger Contact", room),
+    )
+    message = frappe.get_doc("Meta Messaging Message", message_name)
+    participant_matches = (
+        message.sender_id == contact.sender_id
+        or message.recipient_id == contact.sender_id
+    )
+    if message.connection != contact.connection or not participant_matches:
+        raise frappe.PermissionError(_("Attachment is not part of this conversation."))
+    if not message.attachment:
+        raise frappe.DoesNotExistError
+
+    files = frappe.get_all(
+        "File",
+        filters={
+            "file_url": message.attachment,
+            "attached_to_doctype": "Meta Messaging Message",
+            "attached_to_name": message.name,
+        },
+        fields=["file_url", "is_private"],
+        limit=1,
+    )
+    if not files:
+        raise frappe.DoesNotExistError
+    file_url = files[0].file_url
+    if files[0].is_private:
+        from frappe.utils.response import send_private_file
+
+        return send_private_file(file_url.split("/private", 1)[1])
+
+    from werkzeug.utils import redirect
+
+    return redirect(
+        file_url
+        if str(file_url).startswith(("http://", "https://"))
+        else f"{get_url().rstrip('/')}/{str(file_url).lstrip('/')}"
+    )
