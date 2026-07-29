@@ -1,10 +1,12 @@
 {
  "actions": [],
  "allow_rename": 1,
+ "autoname": "field:contact_key",
  "creation": "2026-05-27 00:00:00",
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
+  "contact_key",
   "contact_name",
   "sender_id",
   "channel",
@@ -15,6 +17,15 @@
  ],
  "fields": [
   {
+   "description": "Connection-scoped hash used as the stable conversation identity.",
+   "fieldname": "contact_key",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "Contact Key",
+   "read_only": 1,
+   "unique": 1
+  },
+  {
    "fieldname": "contact_name",
    "fieldtype": "Data",
    "label": "Contact Name"
@@ -24,8 +35,7 @@
    "fieldtype": "Data",
    "in_list_view": 1,
    "label": "Sender ID",
-   "reqd": 1,
-   "unique": 1
+   "reqd": 1
   },
   {
    "fieldname": "channel",

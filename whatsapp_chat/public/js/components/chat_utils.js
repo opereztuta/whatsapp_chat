@@ -45,6 +45,50 @@ function is_image(filename) {
   return true;
 }
 
+function upload_chat_file(file_obj, doctype, docname, is_private = false) {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.addEventListener('error', () => {
+      reject(new Error(__('Internal Server Error')));
+    });
+    xhr.onreadystatechange = () => {
+      if (xhr.readyState !== XMLHttpRequest.DONE) return;
+      if (xhr.status === 200) {
+        try {
+          const response = JSON.parse(xhr.responseText);
+          if (response.message && response.message.doctype === 'File') {
+            resolve(response.message);
+            return;
+          }
+        } catch (error) {
+          // Fall through to the normalized upload error.
+        }
+        reject(new Error(__('File upload failed!')));
+        return;
+      }
+      try {
+        const error = JSON.parse(xhr.responseText);
+        const messages = JSON.parse(error._server_messages);
+        const first = JSON.parse(messages[0]);
+        reject(new Error(__(first.message)));
+      } catch (error) {
+        reject(new Error(__('File upload failed!')));
+      }
+    };
+
+    xhr.open('POST', '/api/method/upload_file', true);
+    xhr.setRequestHeader('Accept', 'application/json');
+    xhr.setRequestHeader('X-Frappe-CSRF-Token', frappe.csrf_token);
+    const form_data = new FormData();
+    form_data.append('file', file_obj, file_obj.name);
+    form_data.append('is_private', is_private ? 1 : 0);
+    form_data.append('doctype', doctype);
+    form_data.append('docname', docname);
+    form_data.append('optimize', 1);
+    xhr.send(form_data);
+  });
+}
+
 async function get_rooms() {
   const res = await frappe.call({
     type: 'GET',
@@ -168,10 +212,27 @@ function set_messenger_notification_count(type) {
   }
 }
 
-async function send_messenger_message(room, content) {
+async function send_messenger_message(room, content, attachment, mime_type) {
   const res = await frappe.call({
     method: 'whatsapp_chat.api.messenger.send_message',
-    args: { room, content },
+    args: {
+      room,
+      content,
+      attachment: attachment || null,
+      mime_type: mime_type || null,
+    },
+  });
+  return res.message;
+}
+
+async function send_messenger_voice_note(room, attachment, mime_type) {
+  const res = await frappe.call({
+    method: 'whatsapp_chat.api.messenger.send_voice_note',
+    args: {
+      room,
+      attachment,
+      mime_type: mime_type || null,
+    },
   });
   return res.message;
 }
@@ -244,6 +305,7 @@ export {
   is_date_change,
   mark_message_read,
   is_image,
+  upload_chat_file,
   create_private_room,
   get_avatar_html,
   set_notification_count,
@@ -251,5 +313,6 @@ export {
   get_messenger_rooms,
   get_messenger_messages,
   send_messenger_message,
+  send_messenger_voice_note,
   set_messenger_notification_count,
 };

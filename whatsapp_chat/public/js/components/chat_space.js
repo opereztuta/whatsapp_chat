@@ -13,7 +13,9 @@ import {
   get_avatar_html,
   mark_message_read,
   get_error_message,
+  upload_chat_file,
 } from './chat_utils';
+import VoiceRecorder, { get_voice_recorder_html } from './voice_recorder';
 
 export default class ChatSpace {
   constructor(opts) {
@@ -21,13 +23,7 @@ export default class ChatSpace {
     this.$wrapper = opts.$wrapper;
     this.profile = opts.profile;
     this.file = null;
-    this.voice_recorder = null;
-    this.voice_stream = null;
-    this.voice_chunks = [];
-    this.voice_mime_type = null;
-    this.voice_timer = null;
-    this.voice_recording_started_at = null;
-    this.voice_should_send = false;
+    this.voice_recorder_controller = null;
     this.call_state = null;
     this.setup();
   }
@@ -176,21 +172,7 @@ export default class ChatSpace {
 					type='search'
 					placeholder='${__('Type message')}'
 				>
-				<div class='voice-recording-state hidden'>
-					<span class='voice-recording-dot'></span>
-					<span class='voice-recording-timer'>0:00</span>
-					<button type='button' class='voice-stop-button' title='${__('Send voice note')}'>
-						<svg xmlns="http://www.w3.org/2000/svg" width="1.1rem" height="1.1rem" viewBox="0 0 24 24">
-							<path d="M24 0l-6 22-8.129-7.239 7.802-8.234-10.458 7.227-7.215-1.754 24-12zm-15 16.668v7.332l3.258-4.431-3.258-2.901z"/>
-						</svg>
-					</button>
-					<button type='button' class='voice-cancel-button' title='${__('Cancel recording')}'>
-						${frappe.utils.icon('es-line-delete', 'md')}
-					</button>
-				</div>
-				<button type='button' class='voice-record-button' title='${__('Record voice note')}'>
-					${frappe.utils.icon('es-solid-audio', 'md')}
-				</button>
+				${get_voice_recorder_html()}
 				<div class='message-send-container'>
 					<span class='message-send-button'>
 							<svg xmlns="http://www.w3.org/2000/svg" width="1.1rem" height="1.1rem" viewBox="0 0 24 24">
@@ -211,61 +193,33 @@ export default class ChatSpace {
   }
 
   upload_file(file) {
-    return new Promise((resolve, reject) => {
-      let xhr = new XMLHttpRequest();
-
-      xhr.addEventListener('error', () => {
-        reject(new Error(__('Internal Server Error')));
-      });
-      xhr.onreadystatechange = () => {
-        if (xhr.readyState == XMLHttpRequest.DONE) {
-          if (xhr.status === 200) {
-            let r = null;
-            let file_doc = null;
-            try {
-              r = JSON.parse(xhr.responseText);
-              if (r.message.doctype === 'File') {
-                file_doc = r.message;
-              }
-            } catch (e) {
-              r = xhr.responseText;
-            }
-            if (file_doc === null) {
-              reject(new Error(__('File upload failed!')));
-              return;
-            }
-            resolve(file_doc);
-          } else {
-            try {
-              const error = JSON.parse(xhr.responseText);
-              const messages = JSON.parse(error._server_messages);
-              const errorObj = JSON.parse(messages[0]);
-              reject(new Error(__(errorObj.message)));
-            } catch (e) {
-              reject(new Error(__('File upload failed!')));
-            }
-          }
-        }
-      };
-
-      xhr.open('POST', '/api/method/upload_file', true);
-      xhr.setRequestHeader('Accept', 'application/json');
-      xhr.setRequestHeader('X-Frappe-CSRF-Token', frappe.csrf_token);
-
-      let form_data = new FormData();
-
-      form_data.append('file', file.file_obj, file.name);
-      form_data.append('is_private', +false);
-
-      form_data.append('doctype', 'WhatsApp Contact');
-      form_data.append('docname', this.profile.room);
-      form_data.append('optimize', +true);
-      xhr.send(form_data);
-    });
+    return upload_chat_file(
+      file.file_obj,
+      'WhatsApp Contact',
+      this.profile.room
+    );
   }
 
   setup_events() {
     const me = this;
+    this.voice_recorder_controller = new VoiceRecorder({
+      $scope: this.$chat_space,
+      get_error_message,
+      attach_selector: '.open-attach-items',
+      on_send: async (file, mime_type) => {
+        const file_doc = await this.upload_file({
+          file_obj: file,
+          name: file.name,
+        });
+        const sent = await send_voice_note(
+          this.profile.room,
+          file_doc.file_url,
+          mime_type
+        );
+        this.append_outgoing_message(sent);
+      },
+    });
+    this.voice_recorder_controller.bind();
 
     //Timeout function
     me.typing_timeout = () => {
@@ -330,213 +284,11 @@ export default class ChatSpace {
       me.handle_send_message();
     });
 
-    $('.voice-record-button').on('click', function () {
-      me.start_voice_recording();
-    });
-
-    $('.voice-stop-button').on('click', function () {
-      me.stop_voice_recording(true);
-    });
-
-    $('.voice-cancel-button').on('click', function () {
-      me.stop_voice_recording(false);
-    });
-
     $('.type-message').keydown(function (e) {
       if (e.which === 13) {
         me.handle_send_message();
       }
     });
-  }
-
-  get_recording_mime_type() {
-    if (typeof MediaRecorder === 'undefined') {
-      return null;
-    }
-
-    const preferred_types = [
-      'audio/ogg;codecs=opus',
-      'audio/mp4',
-      'audio/webm;codecs=opus',
-    ];
-
-    for (const mime_type of preferred_types) {
-      if (MediaRecorder.isTypeSupported(mime_type)) {
-        return mime_type;
-      }
-    }
-
-    return '';
-  }
-
-  get_voice_file_extension(mime_type) {
-    const normalized = (mime_type || '').split(';')[0].toLowerCase();
-    if (normalized === 'audio/mp4') {
-      return 'm4a';
-    }
-    if (normalized === 'audio/webm') {
-      return 'webm';
-    }
-    return 'ogg';
-  }
-
-  update_voice_recording_timer() {
-    if (!this.voice_recording_started_at) {
-      return;
-    }
-
-    const elapsed_seconds = Math.floor(
-      (Date.now() - this.voice_recording_started_at) / 1000
-    );
-    const minutes = Math.floor(elapsed_seconds / 60);
-    const seconds = `${elapsed_seconds % 60}`.padStart(2, '0');
-    $('.voice-recording-timer').text(`${minutes}:${seconds}`);
-  }
-
-  set_recording_ui(is_recording) {
-    $('.type-message').prop('disabled', is_recording);
-    $('.open-attach-items').toggleClass('disabled', is_recording);
-    $('.message-send-button').toggleClass('disabled', is_recording);
-    $('.voice-record-button').toggleClass('hidden', is_recording);
-    $('.voice-recording-state').toggleClass('hidden', !is_recording);
-  }
-
-  cleanup_voice_recording() {
-    if (this.voice_timer) {
-      clearInterval(this.voice_timer);
-      this.voice_timer = null;
-    }
-    if (this.voice_stream) {
-      this.voice_stream.getTracks().forEach((track) => track.stop());
-    }
-    this.voice_recorder = null;
-    this.voice_stream = null;
-    this.voice_chunks = [];
-    this.voice_mime_type = null;
-    this.voice_recording_started_at = null;
-    this.voice_should_send = false;
-    $('.voice-recording-timer').text('0:00');
-    this.set_recording_ui(false);
-  }
-
-  async start_voice_recording() {
-    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-      frappe.msgprint({
-        title: __('Voice recording unavailable'),
-        message: __('This browser does not support microphone recording.'),
-        indicator: 'red',
-      });
-      return;
-    }
-
-    const mime_type = this.get_recording_mime_type();
-    if (mime_type === null) {
-      frappe.msgprint({
-        title: __('Voice recording unavailable'),
-        message: __('This browser does not support audio recording.'),
-        indicator: 'red',
-      });
-      return;
-    }
-
-    try {
-      this.voice_stream = await navigator.mediaDevices.getUserMedia({
-        audio: true,
-      });
-      this.voice_chunks = [];
-      this.voice_mime_type = mime_type;
-      this.voice_should_send = false;
-
-      const options = mime_type ? { mimeType: mime_type } : {};
-      this.voice_recorder = new MediaRecorder(this.voice_stream, options);
-      this.voice_recorder.ondataavailable = (event) => {
-        if (event.data && event.data.size > 0) {
-          this.voice_chunks.push(event.data);
-        }
-      };
-      this.voice_recorder.onstop = () => {
-        this.finish_voice_recording();
-      };
-      this.voice_recorder.start();
-      this.voice_recording_started_at = Date.now();
-      this.update_voice_recording_timer();
-      this.voice_timer = setInterval(() => {
-        this.update_voice_recording_timer();
-      }, 1000);
-      this.set_recording_ui(true);
-    } catch (error) {
-      this.cleanup_voice_recording();
-      frappe.msgprint({
-        title: __('Microphone permission needed'),
-        message: __('Allow microphone access to record a voice note.'),
-        indicator: 'red',
-      });
-    }
-  }
-
-  stop_voice_recording(should_send) {
-    if (!this.voice_recorder) {
-      return;
-    }
-
-    this.voice_should_send = should_send;
-    if (this.voice_recorder.state !== 'inactive') {
-      this.voice_recorder.stop();
-    } else {
-      this.finish_voice_recording();
-    }
-  }
-
-  async finish_voice_recording() {
-    const should_send = this.voice_should_send;
-    const chunks = this.voice_chunks;
-    const mime_type = this.voice_mime_type || (
-      chunks[0] ? chunks[0].type : ''
-    );
-    this.cleanup_voice_recording();
-
-    if (!should_send) {
-      return;
-    }
-
-    if (!chunks.length) {
-      frappe.msgprint({
-        title: __('Empty voice note'),
-        message: __('No audio was recorded.'),
-        indicator: 'red',
-      });
-      return;
-    }
-
-    const blob = new Blob(chunks, { type: mime_type || 'audio/ogg' });
-    const extension = this.get_voice_file_extension(blob.type || mime_type);
-    const file = new File(
-      [blob],
-      `voice-note-${Date.now()}.${extension}`,
-      { type: blob.type || mime_type }
-    );
-
-    try {
-      const file_doc = await this.upload_file({
-        file_obj: file,
-        name: file.name,
-      });
-      const sent = await send_voice_note(
-        this.profile.room,
-        file_doc.file_url,
-        file.type || mime_type
-      );
-      this.append_outgoing_message(sent);
-    } catch (error) {
-      frappe.msgprint({
-        title: __('Could not send voice note'),
-        message: get_error_message(
-          error,
-          __('This voice note could not be sent.')
-        ),
-        indicator: 'red',
-      });
-    }
   }
 
   setup_socketio() {
@@ -589,6 +341,10 @@ export default class ChatSpace {
   }
 
   destroy_socket_events() {
+    if (this.voice_recorder_controller) {
+      this.voice_recorder_controller.destroy();
+      this.voice_recorder_controller = null;
+    }
     frappe.realtime.off(this.profile.room);
     frappe.realtime.off('latest_chat_updates');
     frappe.realtime.off('whatsapp_call_update');

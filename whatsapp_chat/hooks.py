@@ -147,7 +147,8 @@ doc_events = {
         "after_insert": "whatsapp_chat.api.message.last_message"
     },
     "Meta Messaging Message": {
-        "after_insert": "whatsapp_chat.api.messenger.last_message"
+        "after_insert": "whatsapp_chat.api.messenger.last_message",
+        "on_update": "whatsapp_chat.api.messenger.attachment_updated"
     }
 }
 

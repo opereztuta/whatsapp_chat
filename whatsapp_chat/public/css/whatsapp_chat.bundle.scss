@@ -257,6 +257,13 @@ $height: 582px;
       max-height: 200px;
       object-fit: contain;
     }
+    .chat-video {
+      display: block;
+      width: 100%;
+      max-width: 280px;
+      max-height: 220px;
+      border-radius: 8px;
+    }
     .message-name {
       font-size: $font-size-xs;
       font-weight: bold;
@@ -340,7 +347,8 @@ $height: 582px;
     gap: 6px;
     min-width: 0;
     .whatsapp-call-actions,
-    .whatsapp-message-composer {
+    .whatsapp-message-composer,
+    .messenger-message-composer {
       display: flex;
       align-items: center;
       min-width: 0;
@@ -353,7 +361,11 @@ $height: 582px;
     .whatsapp-message-composer {
       flex: 0 0 auto;
     }
-    .open-attach-items {
+    .messenger-message-composer {
+      flex: 0 0 auto;
+    }
+    .open-attach-items,
+    .messenger-open-attach {
       cursor: pointer;
       flex: 0 0 24px;
       &.disabled {
@@ -387,6 +399,11 @@ $height: 582px;
       background: var(--control-bg);
       color: var(--text-color);
       margin-right: 8px;
+      &.disabled,
+      &:disabled {
+        cursor: not-allowed;
+        opacity: 0.45;
+      }
     }
     .whatsapp-permission-button {
       border: 0;

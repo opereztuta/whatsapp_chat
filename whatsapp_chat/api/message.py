@@ -1,12 +1,4 @@
 import frappe
-import json
-import mimetypes
-import os
-import shutil
-import subprocess
-import tempfile
-from pathlib import PurePosixPath
-from urllib.parse import unquote, urlparse
 from frappe import _
 from frappe.utils import cint
 from whatsapp_chat.api.auth import require_contact_access, ROLE_AGENT
@@ -15,242 +7,21 @@ from whatsapp_chat.whatsapp_chat.doctype.whatsapp_contact.whatsapp_contact \
 from frappe_whatsapp.frappe_whatsapp.doctype.whatsapp_message.whatsapp_message import WhatsAppMessage  # noqa: E501
 from typing import Any, cast
 from frappe.utils import now
+from whatsapp_chat.api.media import (
+    detect_content_type,
+    detect_media_mime_type,
+    resolve_attachment_content_type,
+)
+from whatsapp_chat.api.voice import (
+    VOICE_NOTE_MIME_WITH_CODEC,
+    get_file_doc_for_attachment,
+    normalize_voice_note_to_ogg,
+)
 
 
-IMG_FILE_TYPES = {
-    "image/apng", "image/avif", "image/gif", "image/jpeg",
-    "image/png", "image/svg+xml", "image/webp"}
-
-DOC_FILE_TYPES = {
-    "application/pdf", "application/vnd.ms-powerpoint",
-    "application/msword", "application/vnd.ms-excel",
-    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    ("application/vnd.openxmlformats-officedocument." +
-     "presentationml.presentation"),
-    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"}
-
-AUDIO_FILE_TYPES = {
-    "audio/aac",
-    "audio/amr",
-    "audio/mp4",
-    "audio/mpeg",
-    "audio/ogg",
-    "audio/opus",
-    "audio/webm",
-}
-
-VIDEO_FILE_TYPES = {"video/mp4", "video/3gpp", "video/3gp"}
-
-MIME_ALIASES = {
-    "audio/mp3": "audio/mpeg",
-    "audio/x-m4a": "audio/mp4",
-    "audio/x-aac": "audio/aac",
-    "audio/x-mpeg": "audio/mpeg",
-    "video/3gp": "video/3gpp",
-}
-
-EXTENSION_TO_MIME = {
-    ".aac": "audio/aac",
-    ".amr": "audio/amr",
-    ".apng": "image/apng",
-    ".avif": "image/avif",
-    ".doc": "application/msword",
-    ".docx": (
-        "application/vnd.openxmlformats-officedocument."
-        "wordprocessingml.document"
-    ),
-    ".gif": "image/gif",
-    ".jpeg": "image/jpeg",
-    ".jpg": "image/jpeg",
-    ".m4a": "audio/mp4",
-    ".mp3": "audio/mpeg",
-    ".mp4": "video/mp4",
-    ".oga": "audio/ogg",
-    ".ogg": "audio/ogg",
-    ".opus": "audio/opus",
-    ".pdf": "application/pdf",
-    ".png": "image/png",
-    ".ppt": "application/vnd.ms-powerpoint",
-    ".pptx": (
-        "application/vnd.openxmlformats-officedocument."
-        "presentationml.presentation"
-    ),
-    ".svg": "image/svg+xml",
-    ".webm": "audio/webm",
-    ".webp": "image/webp",
-    ".xls": "application/vnd.ms-excel",
-    ".xlsx": (
-        "application/vnd.openxmlformats-officedocument."
-        "spreadsheetml.sheet"
-    ),
-    ".3gp": "video/3gpp",
-}
-
-MIME_TO_CONTENT_TYPE = {
-    **{mime_type: "image" for mime_type in IMG_FILE_TYPES},
-    **{mime_type: "document" for mime_type in DOC_FILE_TYPES},
-    **{mime_type: "audio" for mime_type in AUDIO_FILE_TYPES},
-    **{mime_type: "video" for mime_type in VIDEO_FILE_TYPES},
-}
-
-ALLOWED_MEDIA_CONTENT_TYPES = {"image", "document", "audio", "video"}
 UNSUPPORTED_OUTBOUND_AUDIO_TYPES = {"audio/webm"}
 MAX_VOICE_NOTE_BYTES = 16 * 1024 * 1024
 VOICE_NOTE_TRANSCODE_MIME_TYPES = {"audio/mp4", "audio/opus", "audio/webm"}
-
-mimetypes.add_type("audio/aac", ".aac")
-mimetypes.add_type("audio/amr", ".amr")
-mimetypes.add_type("audio/mp4", ".m4a")
-mimetypes.add_type("audio/ogg", ".oga")
-mimetypes.add_type("audio/ogg", ".ogg")
-mimetypes.add_type("audio/opus", ".opus")
-mimetypes.add_type("audio/webm", ".webm")
-mimetypes.add_type("video/3gpp", ".3gp")
-
-
-def normalize_mime_type(mime_type: str | None) -> str | None:
-    """Return a lower-case MIME value without parameters."""
-    if not mime_type:
-        return None
-
-    normalized = str(mime_type).split(";", 1)[0].strip().lower()
-    if not normalized:
-        return None
-
-    return MIME_ALIASES.get(normalized, normalized)
-
-
-def _extension_from_name(name: str | None) -> str:
-    if not name:
-        return ""
-
-    path = unquote(urlparse(str(name)).path)
-    return PurePosixPath(path).suffix.lower()
-
-
-def _mime_from_name(name: str | None) -> str | None:
-    extension = _extension_from_name(name)
-    if extension in EXTENSION_TO_MIME:
-        return EXTENSION_TO_MIME[extension]
-
-    guessed = mimetypes.guess_type(name or "")[0]
-    return normalize_mime_type(guessed)
-
-
-def _get_file_record(attachment: str | None) -> dict[str, Any] | None:
-    if not attachment:
-        return None
-
-    files = frappe.get_all(
-        "File",
-        filters={"file_url": attachment},
-        fields=["name", "file_name", "file_type", "file_url", "is_private"],
-        limit=1,
-    )
-    if not files:
-        return None
-
-    return cast(dict[str, Any], files[0])
-
-
-def _mime_from_file_record(file_record: dict[str, Any] | None) -> str | None:
-    if not file_record:
-        return None
-
-    mime_type = _mime_from_name(cast(str | None, file_record.get("file_name")))
-    if mime_type:
-        return mime_type
-
-    file_type = file_record.get("file_type")
-    if not file_type:
-        return None
-
-    normalized = normalize_mime_type(str(file_type))
-    if normalized and "/" in normalized:
-        return normalized
-
-    return EXTENSION_TO_MIME.get(f".{str(file_type).lower().lstrip('.')}")
-
-
-def detect_media_mime_type(
-        attachment: str, explicit_mime_type: str | None = None
-) -> str | None:
-    """Detect a whitelisted media MIME from explicit MIME, File, or URL.
-
-    Client-provided MIME is only accepted when it is in our supported
-    whitelist and does not conflict with server-visible file metadata.
-    """
-    explicit = normalize_mime_type(explicit_mime_type)
-    if explicit and explicit not in MIME_TO_CONTENT_TYPE:
-        frappe.throw(
-            _("Unsupported attachment MIME type: {0}").format(explicit),
-            title=_("Unsupported Attachment"),
-        )
-
-    file_record = _get_file_record(attachment)
-    detected_candidates = [
-        _mime_from_file_record(file_record),
-        _mime_from_name(attachment),
-    ]
-    detected_candidates = [
-        candidate for candidate in detected_candidates
-        if candidate in MIME_TO_CONTENT_TYPE
-    ]
-
-    if explicit and detected_candidates:
-        explicit_content_type = MIME_TO_CONTENT_TYPE[explicit]
-        for candidate in detected_candidates:
-            if MIME_TO_CONTENT_TYPE[candidate] != explicit_content_type:
-                frappe.throw(
-                    _(
-                        "Attachment MIME type {0} does not match the "
-                        "uploaded file."
-                    ).format(explicit),
-                    title=_("Unsupported Attachment"),
-                )
-
-    if explicit:
-        return explicit
-
-    return detected_candidates[0] if detected_candidates else None
-
-
-def detect_content_type(
-        attachment: str, explicit_mime_type: str | None = None) -> str:
-    """Return the WhatsApp content type for a supported attachment."""
-    mime_type = detect_media_mime_type(attachment, explicit_mime_type)
-    return MIME_TO_CONTENT_TYPE.get(mime_type or "", "text")
-
-
-def _resolve_attachment_content_type(
-        attachment: str,
-        explicit_mime_type: str | None = None,
-        explicit_content_type: str | None = None,
-) -> tuple[str, str | None]:
-    mime_type = detect_media_mime_type(attachment, explicit_mime_type)
-    content_type = MIME_TO_CONTENT_TYPE.get(mime_type or "")
-
-    if not content_type:
-        frappe.throw(
-            _("Unsupported attachment type. Please upload an image, audio, "
-              "video, PDF, or Office document."),
-            title=_("Unsupported Attachment"),
-        )
-
-    if explicit_content_type:
-        requested = str(explicit_content_type).strip().lower()
-        if requested not in ALLOWED_MEDIA_CONTENT_TYPES:
-            frappe.throw(
-                _("Unsupported content type: {0}").format(requested),
-                title=_("Unsupported Attachment"),
-            )
-        if requested != content_type:
-            frappe.throw(
-                _("Attachment content type does not match the uploaded file."),
-                title=_("Unsupported Attachment"),
-            )
-
-    return content_type, mime_type
 
 
 def _ensure_supported_outbound_media(
@@ -267,74 +38,6 @@ def _ensure_supported_outbound_media(
 def _set_if_has_field(doc, fieldname: str, value: Any) -> None:
     if doc.meta.has_field(fieldname):
         doc.set(fieldname, value)
-
-
-def _get_file_doc_for_attachment(attachment: str):
-    file_record = _get_file_record(attachment)
-    if not file_record:
-        return None
-
-    return frappe.get_doc("File", file_record["name"])
-
-
-def _get_local_file_path(file_doc) -> str:
-    file_path = str(file_doc.get_full_path())
-    if file_path.startswith(("http://", "https://")):
-        frappe.throw(
-            _("Remote voice note files cannot be converted before sending."),
-            title=_("Unsupported Voice Note Format"),
-        )
-    return file_path
-
-
-def _get_voice_note_audio_metadata(file_doc) -> dict[str, str]:
-    """Probe uploaded audio so browser MIME labels are not blindly trusted."""
-    ffprobe_path = shutil.which("ffprobe")
-    if not ffprobe_path:
-        return {}
-
-    file_path = _get_local_file_path(file_doc)
-    command = [
-        ffprobe_path,
-        "-v",
-        "error",
-        "-of",
-        "json",
-        "-show_format",
-        "-show_streams",
-        file_path,
-    ]
-    try:
-        result = subprocess.run(
-            command,
-            check=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            timeout=30,
-        )
-        payload = json.loads(result.stdout.decode("utf-8") or "{}")
-    except Exception:
-        frappe.log_error(
-            frappe.get_traceback(),
-            "WhatsApp voice note ffprobe failed",
-        )
-        return {}
-
-    streams = payload.get("streams") or []
-    audio_stream = next(
-        (
-            stream for stream in streams
-            if isinstance(stream, dict) and stream.get("codec_type") == "audio"
-        ),
-        {},
-    )
-    format_payload = payload.get("format") or {}
-
-    metadata = {
-        "codec_name": str(audio_stream.get("codec_name") or "").lower(),
-        "format_name": str(format_payload.get("format_name") or "").lower(),
-    }
-    return {key: value for key, value in metadata.items() if value}
 
 
 def _requires_voice_note_transcode(
@@ -364,103 +67,20 @@ def _requires_voice_note_transcode(
 
 
 def _transcode_voice_note_to_ogg(*, room: str, attachment: str) -> str:
-    ffmpeg_path = shutil.which("ffmpeg")
-    if not ffmpeg_path:
-        frappe.throw(
-            _("Your browser recorded WebM audio, which WhatsApp cannot send "
-              "directly. Ask an administrator to install ffmpeg on the "
-              "server, or use a browser that records Ogg/Opus or MP4 audio."),
-            title=_("Unsupported Voice Note Format"),
-        )
-
-    file_doc = _get_file_doc_for_attachment(attachment)
-    if not file_doc:
-        frappe.throw(
-            _("Could not find the uploaded voice note file."),
-            title=_("Voice Note Upload Failed"),
-        )
-
-    input_path = _get_local_file_path(file_doc)
-    file_size = os.path.getsize(input_path)
-    if file_size > MAX_VOICE_NOTE_BYTES:
-        frappe.throw(
-            _("Voice notes must be 16 MB or smaller."),
-            title=_("Voice Note Too Large"),
-        )
-
-    with tempfile.TemporaryDirectory(prefix="whatsapp-voice-") as temp_dir:
-        output_path = os.path.join(temp_dir, "voice-note.ogg")
-        # WhatsApp voice notes must be Ogg/Opus, mono, 48 kHz.
-        # -application voip biases the encoder toward speech.
-        command = [
-            ffmpeg_path,
-            "-y",
-            "-i",
-            input_path,
-            "-vn",
-            "-map_metadata",
-            "-1",
-            "-ac",
-            "1",
-            "-ar",
-            "48000",
-            "-c:a",
-            "libopus",
-            "-b:a",
-            "64k",
-            "-application",
-            "voip",
-            "-f",
-            "ogg",
-            output_path,
-        ]
-        try:
-            subprocess.run(
-                command,
-                check=True,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                timeout=60,
-            )
-        except Exception:
-            frappe.log_error(
-                frappe.get_traceback(),
-                "WhatsApp voice note ffmpeg conversion failed",
-            )
-            frappe.throw(
-                _("Could not convert this WebM recording into a WhatsApp "
-                  "audio message. Please try another browser or contact an "
-                  "administrator."),
-                title=_("Voice Note Conversion Failed"),
-            )
-
-        with open(output_path, "rb") as converted_file:
-            converted_content = converted_file.read()
-
-    if len(converted_content) > MAX_VOICE_NOTE_BYTES:
-        frappe.throw(
-            _("Converted voice note is larger than WhatsApp's 16 MB limit."),
-            title=_("Voice Note Too Large"),
-        )
-
-    from frappe.core.doctype.file.file import File
-
-    converted_doc = cast(File, frappe.get_doc({
-        "doctype": "File",
-        "file_name": f"voice-note-{frappe.generate_hash(length=10)}.ogg",
-        "attached_to_doctype": "WhatsApp Contact",
-        "attached_to_name": room,
-        "content": converted_content,
-        "is_private": cint(file_doc.get("is_private")),
-    }))
-    converted_doc.save(ignore_permissions=True)
+    converted_doc = normalize_voice_note_to_ogg(
+        attachment=attachment,
+        attached_to_doctype="WhatsApp Contact",
+        attached_to_name=room,
+        max_bytes=MAX_VOICE_NOTE_BYTES,
+        log_prefix="WhatsApp voice note",
+    )
     return str(converted_doc.file_url)
 
 
 def _prepare_voice_note_attachment(
         *, room: str, attachment: str, mime_type: str | None
 ) -> tuple[str, str | None]:
-    content_type, detected_mime_type = _resolve_attachment_content_type(
+    content_type, detected_mime_type = resolve_attachment_content_type(
         attachment=attachment,
         explicit_mime_type=mime_type,
         explicit_content_type="audio",
@@ -471,7 +91,7 @@ def _prepare_voice_note_attachment(
             title=_("Unsupported Voice Note Format"),
         )
 
-    file_doc = _get_file_doc_for_attachment(attachment)
+    file_doc = get_file_doc_for_attachment(attachment)
     if not file_doc:
         frappe.throw(
             _("Could not find the uploaded voice note file."),
@@ -488,7 +108,7 @@ def _prepare_voice_note_attachment(
         room=room,
         attachment=attachment,
     )
-    detected_mime_type = "audio/ogg; codecs=opus"
+    detected_mime_type = VOICE_NOTE_MIME_WITH_CODEC
 
     return attachment, detected_mime_type
 
@@ -711,7 +331,7 @@ def send(
     content = content or ""
     if attachment:
         resolved_content_type, detected_mime_type = \
-            _resolve_attachment_content_type(
+            resolve_attachment_content_type(
                 attachment=attachment,
                 explicit_mime_type=mime_type,
                 explicit_content_type=content_type,

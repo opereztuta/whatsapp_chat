@@ -74,6 +74,7 @@ export default class MessengerList {
         room_name: element.contact_name || element.sender_id,
         room_type: 'Guest',
         opposite_person_email: element.sender_id,
+        channel: element.channel,
       };
 
       this.messenger_rooms.push([
@@ -163,14 +164,17 @@ export default class MessengerList {
           room_name: res.contact_name,
           room_type: 'Guest',
           opposite_person_email: res.sender_user_no,
+          channel: res.channel,
         };
         me.create_new_room(profile);
         room_item = me.messenger_rooms[0];
       }
 
-      frappe.utils.play_sound('chat-message-receive');
       const message = me.truncate_preview(res.preview || res.content || '');
       room_item[1].set_last_message(message, res.creation);
+      if (res.media_update) return;
+
+      frappe.utils.play_sound('chat-message-receive');
 
       if (me.$messenger_list.is(':visible')) {
         room_item[1].set_as_unread();
