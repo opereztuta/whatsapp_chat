@@ -309,3 +309,48 @@ class TestMessengerMedia(FrappeTestCase):
         self.assertIn("download_attachment?", stored.content)
         self.assertEqual(stored.attachment_name, file_doc.file_name)
         self.assertEqual(stored.attachment_status, "Ready")
+
+    def test_multi_attachment_siblings_have_distinct_history_downloads(self):
+        message_names = []
+        for attachment_index in (1, 2):
+            message = frappe.get_doc(
+                {
+                    "doctype": "Meta Messaging Message",
+                    "direction": "incoming",
+                    "channel": "messenger",
+                    "connection": self.connection,
+                    "sender_id": self.sender_id,
+                    "recipient_id": "page",
+                    "external_message_id": "mid-multi",
+                    "message_type": "image",
+                    "attachment_url": (
+                        f"https://scontent.xx.fbcdn.net/{attachment_index}.png"
+                    ),
+                    "attachment_type": "image",
+                    "attachment_index": attachment_index,
+                    "attachment_count": 2,
+                    "attachment_status": "Pending",
+                    "status": "received",
+                }
+            ).insert(ignore_permissions=True, ignore_links=True)
+            file_doc = self._make_file(is_private=1)
+            file_doc.attached_to_doctype = "Meta Messaging Message"
+            file_doc.attached_to_name = message.name
+            file_doc.attached_to_field = "attachment"
+            file_doc.save(ignore_permissions=True)
+            message.attachment = file_doc.file_url
+            message.attachment_name = file_doc.file_name
+            message.attachment_mime_type = "image/png"
+            message.attachment_status = "Ready"
+            message.save(ignore_permissions=True)
+            message_names.append(message.name)
+
+        history = get_all_messages(str(self.contact.name))
+        siblings = [row for row in history if row.name in message_names]
+
+        self.assertEqual(len(siblings), 2)
+        self.assertEqual({row.name for row in siblings}, set(message_names))
+        self.assertEqual(len({row.content for row in siblings}), 2)
+        for row in siblings:
+            self.assertIn("download_attachment?", row.content)
+            self.assertIn(f"message_name={row.name}", row.content)
