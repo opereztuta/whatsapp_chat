@@ -72,7 +72,7 @@ describe("Native Instagram Desk Chat", () => {
       .click();
     cy.get(".instagram-message-bubble").should(
       "contain.text",
-      "<img src=x onerror=alert(1)>"
+      "<img src=x onerror=alert(1)>",
     );
     cy.get(".instagram-message-bubble img").should("not.exist");
   });
@@ -126,5 +126,59 @@ describe("Native Instagram Desk Chat", () => {
     cy.get('[data-message-name="IG-MSG-FAILED"] .instagram-send-error')
       .should("have.length", 1)
       .and("contain.text", "Meta could not fetch this voice note.");
+  });
+
+  it("keeps the post picker bound to the conversation that opened it", () => {
+    const first = { ...conversation, assigned_to: "agent@example.com" };
+    const second = {
+      ...conversation,
+      name: "CONV-2",
+      account: "Other",
+      account_label: "@other",
+      igsid: "IGSID-2",
+      username: "other_user",
+      assigned_to: "agent@example.com",
+    };
+    cy.intercept("GET", "**/frappe_instagram.api.ui.list_conversations*", {
+      body: { message: { items: [first, second], next_cursor: null } },
+    });
+    cy.intercept("GET", "**/frappe_instagram.api.ui.list_owned_media*", {
+      body: {
+        message: {
+          items: [
+            {
+              id: "MEDIA-1",
+              caption: "Account A post",
+              media_type: "IMAGE",
+            },
+          ],
+          next_cursor: null,
+        },
+      },
+    }).as("ownedMedia");
+    cy.intercept("POST", "**/frappe_instagram.api.ui.send_media_share*", {
+      body: { message: { name: "IG-MSG-SHARE" } },
+    }).as("sendPost");
+    cy.reload();
+
+    cy.get(".instagram-navbar-icon").click();
+    cy.get(".instagram-room").first().click();
+    cy.get(".instagram-post").click();
+    cy.wait("@ownedMedia").its("request.query.account").should("eq", "Support");
+
+    // Simulate a selection change behind the modal. The post dialog must retain
+    // the conversation/account pair with which its media was loaded.
+    cy.get(".instagram-back").click({ force: true });
+    cy.get(".instagram-room").eq(1).click({ force: true });
+    cy.get(".instagram-post-card").click();
+    cy.wait("@sendPost").then(({ request }) => {
+      const body =
+        typeof request.body === "string"
+          ? Object.fromEntries(new URLSearchParams(request.body))
+          : request.body;
+      expect(body.conversation).to.equal("CONV-1");
+      expect(body.media_id).to.equal("MEDIA-1");
+      expect(body).not.to.have.property("account");
+    });
   });
 });
