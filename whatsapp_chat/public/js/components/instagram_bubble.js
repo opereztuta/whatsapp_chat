@@ -32,6 +32,7 @@ export default class InstagramBubble {
 
   toggle() {
     this.parent.is_open = !this.parent.is_open;
+    this.parent.set_navbar_expanded(this.parent.is_open);
     this.render_state();
     this.parent.$element.toggle(this.parent.is_open);
     if (this.parent.is_open) this.parent.panel.refresh_conversations();

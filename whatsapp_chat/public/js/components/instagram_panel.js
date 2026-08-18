@@ -899,9 +899,7 @@ export default class InstagramPanel {
 
   update_badge() {
     const unread = Number(this.total_unread || 0);
-    $("#instagram-notification-count")
-      .text(unread || "")
-      .toggle(Boolean(unread));
+    $("#instagram-notification-count").text(unread || "");
   }
 
   show_error(error, fallback) {

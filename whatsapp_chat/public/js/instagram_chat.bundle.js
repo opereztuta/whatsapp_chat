@@ -25,6 +25,7 @@ frappe.InstagramChat = class {
       );
       this.$element = $(document.createElement("div"))
         .addClass("chat-element instagram-element")
+        .attr("id", "instagram-chat-panel")
         .hide();
       this.$container = $(document.createElement("div")).addClass(
         "chat-container"
@@ -34,13 +35,16 @@ frappe.InstagramChat = class {
       $("body").append(this.$app_element);
       this.bubble = new InstagramBubble(this);
       this.bubble.render();
+      const navbarLabel = __("Show Instagram Chats");
       $("header.navbar > .container > .navbar-collapse > ul").prepend(`
-        <li class='nav-item dropdown dropdown-notifications dropdown-mobile instagram-navbar-icon' title='${__(
-          "Show Instagram Chats"
-        )}'>
-          <i class='fa fa-instagram' aria-hidden='true'></i><span class='sr-only'>${__(
-            "Instagram Chats"
-          )}</span><span class='badge' id='instagram-notification-count'></span>
+        <li class='nav-item dropdown dropdown-notifications dropdown-mobile instagram-navbar-icon'>
+          <button class="chat-channel-navbar-button chat-channel-navbar-button--instagram"
+            id="instagram-chat-navbar-button" type="button"
+            aria-controls="instagram-chat-panel" aria-expanded="false"
+            aria-label="${navbarLabel}" title="${navbarLabel}">
+            <i class='fa fa-instagram' aria-hidden='true'></i>
+            <span class='badge' id='instagram-notification-count'></span>
+          </button>
         </li>
       `);
       this.panel = new InstagramPanel({
@@ -64,6 +68,16 @@ frappe.InstagramChat = class {
     } catch (error) {
       console.error("Instagram Chat failed to initialize", error);
     }
+  }
+
+  set_navbar_expanded(expanded) {
+    const label = expanded
+      ? __("Close Instagram Chats")
+      : __("Show Instagram Chats");
+    $("#instagram-chat-navbar-button")
+      .attr("aria-expanded", String(expanded))
+      .attr("aria-label", label)
+      .attr("title", label);
   }
 };
 

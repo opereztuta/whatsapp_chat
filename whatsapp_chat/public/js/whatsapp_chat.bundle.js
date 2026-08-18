@@ -28,6 +28,7 @@ frappe.Chat = class {
 
     this.$chat_element = $(document.createElement('div'))
       .addClass('chat-element')
+      .attr('id', 'whatsapp-chat-panel')
       .hide();
 
     this.$chat_element.append(`
@@ -41,11 +42,17 @@ frappe.Chat = class {
     this.chat_bubble = new ChatBubble(this);
     this.chat_bubble.render();
 
+    const navbar_label = __('Show WhatsApp Chats');
     const navbar_icon_html = `
         <li class='nav-item dropdown dropdown-notifications 
-          dropdown-mobile chat-navbar-icon' title="Show Chats" >
-          ${frappe.utils.icon('small-message', 'md')}
-          <span class="badge" id="chat-notification-count"></span>
+          dropdown-mobile chat-navbar-icon'>
+          <button class="chat-channel-navbar-button chat-channel-navbar-button--whatsapp"
+            id="whatsapp-chat-navbar-button" type="button"
+            aria-controls="whatsapp-chat-panel" aria-expanded="false"
+            aria-label="${navbar_label}" title="${navbar_label}">
+            <i class="fa fa-whatsapp" aria-hidden="true"></i>
+            <span class="badge" id="chat-notification-count"></span>
+          </button>
         </li>
     `;
 
@@ -104,6 +111,7 @@ frappe.Chat = class {
   /** Shows the chat widget */
   show_chat_widget() {
     this.is_open = true;
+    this.set_navbar_expanded(true);
     this.$chat_element.fadeIn(250);
     if (typeof this.chat_space !== 'undefined') {
       scroll_to_bottom(this.chat_space.$chat_space_container);
@@ -113,7 +121,18 @@ frappe.Chat = class {
   /** Hides the chat widget */
   hide_chat_widget() {
     this.is_open = false;
+    this.set_navbar_expanded(false);
     this.$chat_element.fadeOut(300);
+  }
+
+  set_navbar_expanded(expanded) {
+    const label = expanded
+      ? __('Close WhatsApp Chats')
+      : __('Show WhatsApp Chats');
+    $('#whatsapp-chat-navbar-button')
+      .attr('aria-expanded', String(expanded))
+      .attr('aria-label', label)
+      .attr('title', label);
   }
 
   should_close(e) {
