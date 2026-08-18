@@ -63,7 +63,7 @@ frappe.MessengerChat = class {
       const res = await get_settings();
       this.is_admin = res.is_admin;
 
-      if (this.is_desk && !res.can_access_ui) {
+      if (this.is_desk && !(res.can_access_messenger ?? res.can_access_ui)) {
         return;
       }
 

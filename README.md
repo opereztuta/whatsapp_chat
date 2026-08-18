@@ -8,16 +8,18 @@
 ## Overview
 
 WhatsApp Chat provides a WhatsApp-like chat interface directly within Frappe
-Desk, enabling your team to send and receive WhatsApp, Messenger, and Instagram
-messages without leaving the ERP system.
+Desk. WhatsApp and Messenger retain their existing widgets; when
+`frappe_instagram` is installed, a third native Instagram shared-inbox widget
+uses that app's account-scoped conversations and messages.
 
 ## Features
 
 - **Real-time Messaging** - Send and receive WhatsApp messages with instant updates via Socket.IO
 - **Chat Interface** - Familiar WhatsApp-like UI integrated into Frappe Desk
 - **Contact Management** - Automatic contact creation from incoming messages
-- **Media Support** - Send and receive images, documents, audio, and video on WhatsApp and Messenger; Instagram supports images and video
-- **Private Meta Uploads** - Messenger and Instagram files are stored privately and uploaded directly to Meta without requiring public crawler access
+- **Media Support** - Send and receive images, documents, audio, and video on WhatsApp and Messenger; native Instagram renders all stored inbound types and sends images/GIFs, audio/voice, and video
+- **Rich Instagram Actions** - Heart stickers, love/unreact, quick replies, account-owned post sharing, delivery state, and story/reel/share context
+- **Private Meta Uploads** - Messenger files are uploaded directly; native Instagram uses a one-day File-bound share key so Meta never receives `/private/files/...`
 - **Auto Read Receipts** - Automatically send read receipts to WhatsApp when viewing messages (based on WhatsApp Account settings)
 - **Sound Notifications** - Audio alerts for new messages
 - **Multi-user Support** - Assign contacts to specific users for follow-up
@@ -36,6 +38,8 @@ messages without leaving the ERP system.
 - Frappe Framework >= 12.0.0
 - [frappe_whatsapp](https://github.com/shridarpatil/frappe_whatsapp) app (required)
 - WhatsApp Business Account configured in frappe_whatsapp
+- Optional: `frappe_instagram` for the native Instagram widget
+- Optional Instagram voice notes: `ffmpeg` and `ffprobe` on the application server
 
 ## Installation
 
@@ -52,7 +56,21 @@ bench build --app whatsapp_chat
 
 ### Accessing the Chat
 
-After installation, a chat bubble appears in Frappe Desk. Click it to open the chat interface.
+After installation, authorized users see independent navbar controls for their
+available channels. Instagram Manager and Instagram Agent roles enable the
+Instagram panel without granting WhatsApp or Messenger access.
+
+### Instagram Shared Inbox
+
+The Instagram panel defaults to Open conversations and provides account,
+assignment, status, and profile search filters. Agents see unassigned and
+self-assigned conversations, may claim/release them, and can change their
+status. Managers see and reassign all conversations.
+
+The composer is disabled when the account is unavailable, the profile is Do Not
+Contact, or Meta's 24-hour reply window is closed. Uploaded media is private and
+must be reachable by Meta through a public HTTPS site URL. Outbound documents
+remain disabled pending provider acceptance; incoming files are downloadable.
 
 ### Receiving Messages
 
@@ -127,6 +145,7 @@ The app includes notification sounds:
 | App | Description |
 |-----|-------------|
 | [frappe_whatsapp](https://github.com/shridarpatil/frappe_whatsapp) | Core WhatsApp Cloud API integration (required) |
+| `frappe_instagram` | Native multi-account Instagram messaging and shared-inbox backend (optional) |
 | [frappe_whatsapp_chatbot](https://github.com/shridarpatil/frappe_whatsapp_chatbot) | Automated chatbot with flows, keywords, and AI |
 
 ## Troubleshooting

@@ -72,7 +72,7 @@ frappe.Chat = class {
       this.is_admin = res.is_admin;
 
       // If desk user but NOT allowed, do nothing (no UI)
-      if (this.is_desk && !res.can_access_ui) {
+      if (this.is_desk && !(res.can_access_whatsapp ?? res.can_access_ui)) {
         return;
       }
 

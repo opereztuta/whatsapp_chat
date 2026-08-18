@@ -16,6 +16,248 @@ $height: 582px;
   @return $result;
 }
 
+.instagram-app {
+  right: 840px;
+
+  .instagram-element {
+    overflow: hidden;
+  }
+
+  .instagram-filters {
+    padding: 4px $padding-chat-lr 8px;
+  }
+
+  .instagram-filter-row {
+    display: grid;
+    grid-template-columns: 1.25fr 0.9fr 1fr;
+    gap: 5px;
+    margin-top: 6px;
+
+    .form-control {
+      font-size: $font-size-xs;
+      padding: 4px 6px;
+    }
+  }
+
+  .instagram-rooms {
+    height: calc_height($height, 74px);
+  }
+
+  .instagram-avatar {
+    align-items: center;
+    background: linear-gradient(135deg, #833ab4, #fd1d1d, #fcb045);
+    border-radius: 50%;
+    color: var(--white);
+    display: flex;
+    flex: 0 0 38px;
+    font-weight: 600;
+    height: 38px;
+    justify-content: center;
+    overflow: hidden;
+
+    img {
+      height: 100%;
+      object-fit: cover;
+      width: 100%;
+    }
+  }
+
+  .instagram-account-badge,
+  .instagram-event-label,
+  .instagram-reply-context {
+    color: var(--text-muted);
+    font-size: $font-size-xs;
+  }
+
+  .instagram-account-badge {
+    background: var(--control-bg);
+    border-radius: 999px;
+    display: inline-block;
+    margin-top: 3px;
+    padding: 1px 6px;
+  }
+
+  .instagram-verified {
+    color: var(--blue-500);
+    margin-left: 4px;
+  }
+
+  .instagram-unread {
+    background: var(--blue-500);
+    border-radius: 999px;
+    color: var(--white);
+    font-size: 10px;
+    margin-left: 5px;
+    min-width: 18px;
+    padding: 1px 5px;
+    text-align: center;
+  }
+
+  .instagram-empty {
+    color: var(--text-muted);
+    padding: 40px 16px;
+    text-align: center;
+  }
+
+  .instagram-header {
+    align-items: flex-start;
+  }
+
+  .instagram-header-meta {
+    color: var(--text-muted);
+    font-size: $font-size-xs;
+  }
+
+  .instagram-thread-actions {
+    align-items: flex-end;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+
+    select {
+      font-size: $font-size-xs;
+      height: 26px;
+      padding: 2px 5px;
+      width: 90px;
+    }
+  }
+
+  .instagram-policy {
+    background: var(--bg-light-gray);
+    color: var(--text-muted);
+    font-size: $font-size-xs;
+    padding: 5px $padding-chat-lr;
+    text-align: center;
+  }
+
+  .instagram-rich-actions {
+    display: flex;
+    gap: 5px;
+  }
+
+  .instagram-heart {
+    color: var(--red-500);
+    font-size: 18px;
+    line-height: 1;
+  }
+
+  .instagram-heart-message {
+    color: var(--red-500);
+    font-size: 42px !important;
+    line-height: 1;
+  }
+
+  .instagram-message-bubble {
+    position: relative;
+
+    audio {
+      max-width: 245px;
+      width: 100%;
+    }
+  }
+
+  .instagram-attachment-group {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+
+    .sender-message,
+    .recipient-message {
+      margin-bottom: 0;
+    }
+  }
+
+  .instagram-quick-reply-options {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-top: 6px;
+
+    span {
+      border: 1px solid var(--border-color);
+      border-radius: 999px;
+      font-size: 11px;
+      padding: 2px 7px;
+    }
+  }
+
+  .instagram-reaction {
+    background: var(--card-bg);
+    border-radius: 999px;
+    bottom: -8px;
+    box-shadow: var(--shadow-sm);
+    color: var(--red-500);
+    padding: 1px 5px;
+    position: absolute;
+    right: 4px;
+  }
+}
+
+.instagram-navbar-icon {
+  align-items: center;
+  cursor: pointer;
+  display: flex;
+  padding: 0 8px;
+
+  .fa-instagram {
+    font-size: 18px;
+  }
+
+  .badge {
+    background: var(--red-avatar-color);
+    border: 1px solid var(--red-avatar-color);
+    border-radius: 50%;
+    color: var(--bg-color);
+    font-size: 9px;
+    left: -6px;
+    position: relative;
+    top: -10px;
+  }
+}
+
+@media (max-width: 1250px) {
+  .instagram-app {
+    right: 0;
+  }
+}
+
+.instagram-post-picker {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  max-height: 480px;
+  overflow-y: auto;
+
+  .instagram-post-card {
+    background: var(--control-bg);
+    border: 1px solid var(--dark-border-color);
+    border-radius: 8px;
+    color: var(--text-color);
+    cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    font-size: $font-size-xs;
+    gap: 4px;
+    overflow: hidden;
+    padding: 0 0 5px;
+    text-align: left;
+
+    img {
+      aspect-ratio: 1;
+      object-fit: cover;
+      width: 100%;
+    }
+
+    span {
+      display: -webkit-box;
+      overflow: hidden;
+      padding: 0 5px;
+      -webkit-box-orient: vertical;
+      -webkit-line-clamp: 2;
+    }
+  }
+}
+
 .chat-app {
   position: fixed;
   bottom: 24px;
@@ -631,14 +873,20 @@ $height: 582px;
   z-index: 1029;
   padding: 0 1rem;
 
-  ::-webkit-scrollbar { width: 2px; }
-  ::-webkit-scrollbar-track { background: var(--card-bg); }
+  ::-webkit-scrollbar {
+    width: 2px;
+  }
+  ::-webkit-scrollbar-track {
+    background: var(--card-bg);
+  }
   ::-webkit-scrollbar-thumb {
     background: var(--scrollbar-thumb-color);
     border-radius: 10px;
     max-height: 30px;
   }
-  ::-webkit-scrollbar-thumb:hover { background: var(--gray-500); }
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--gray-500);
+  }
 }
 
 .messenger-element {

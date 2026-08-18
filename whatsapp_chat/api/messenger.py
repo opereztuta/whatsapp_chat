@@ -11,7 +11,9 @@ from whatsapp_chat.api.media import (
     get_file_record,
     resolve_attachment_content_type,
 )
-from whatsapp_chat.whatsapp_chat.doctype.messenger_contact.messenger_contact import MessengerContact
+from whatsapp_chat.whatsapp_chat.doctype.messenger_contact.messenger_contact import (
+    MessengerContact,
+)
 
 
 def _message_preview(doc) -> str:
@@ -246,13 +248,28 @@ def get_contacts():
     user = frappe.session.user
     roles = set(frappe.get_roles(user))
 
+    native_instagram = False
+    if (
+        "frappe_instagram" in frappe.get_installed_apps()
+        and frappe.db.table_exists("Instagram Settings")
+    ):
+        native_instagram = bool(
+            frappe.db.get_single_value("Instagram Settings", "enabled")
+        )
+    channel_filter = {"channel": ("!=", "Instagram")} if native_instagram else {}
+
     if "System Manager" in roles:
         return frappe.db.get_all(
-            "Messenger Contact", fields=["*"], order_by="modified desc")
+            "Messenger Contact",
+            filters=channel_filter,
+            fields=["*"],
+            order_by="modified desc",
+        )
 
+    filters = {"email": ["in", [user, ""]], **channel_filter}
     return frappe.db.get_all(
         "Messenger Contact",
-        filters={"email": ["in", [user, ""]]},
+        filters=filters,
         fields=["*"],
         order_by="modified desc",
     )
