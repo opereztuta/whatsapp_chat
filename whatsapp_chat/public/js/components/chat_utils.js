@@ -66,6 +66,16 @@ function upload_chat_file(file_obj, doctype, docname, is_private = false) {
         reject(new Error(__('File upload failed!')));
         return;
       }
+      if (xhr.status === 413) {
+        // nginx rejects an oversized body before Frappe ever sees it, and its
+        // 413 page is HTML, so the JSON parsing below cannot produce a message.
+        reject(
+          new Error(
+            __('The file is too large to upload. Please attach a smaller file.')
+          )
+        );
+        return;
+      }
       try {
         const error = JSON.parse(xhr.responseText);
         const messages = JSON.parse(error._server_messages);

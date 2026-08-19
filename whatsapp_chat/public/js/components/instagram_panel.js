@@ -276,6 +276,10 @@ export default class InstagramPanel {
   }
 
   async load_messages(before = null) {
+    // A realtime event can land between open_conversation() setting this.active
+    // and render_thread() building this.$thread, so neither is safe to assume.
+    const conversation = this.active;
+    if (!conversation || !this.$thread) return;
     const $container = this.$thread.find(".instagram-messages");
     const previous_height =
       before && $container.length ? $container[0].scrollHeight : 0;
@@ -283,9 +287,12 @@ export default class InstagramPanel {
       before && $container.length ? $container.scrollTop() : 0;
     try {
       const result = await instagram_call("list_messages", {
-        conversation: this.active.name,
+        conversation: conversation.name,
         before,
       });
+      // The user may have switched threads or gone back to the list while the
+      // request was in flight; those messages no longer belong on screen.
+      if (this.active !== conversation || !this.$thread) return;
       this.message_cursor = result.next_cursor;
       this.messages = before
         ? [...(result.items || []), ...(this.messages || [])]
@@ -681,20 +688,31 @@ export default class InstagramPanel {
   }
 
   async send_file(file, is_voice_note) {
+    const mime = (file.type || "").toLowerCase();
+    const type =
+      is_voice_note || mime.startsWith("audio/")
+        ? "audio"
+        : mime.startsWith("video/")
+          ? "video"
+          : "image";
     try {
+      // Instagram rejects oversized media anyway, so fail here rather than
+      // after pushing the whole body up to the server.
+      const limit = ((this.config.limits || {}).media || {})[type];
+      if (limit && file.size > limit) {
+        throw new Error(
+          __("This {0} is larger than Instagram's {1} MB limit.", [
+            type,
+            Math.floor(limit / (1024 * 1024)),
+          ]),
+        );
+      }
       const uploaded = await upload_chat_file(
         file,
         "Instagram Conversation",
         this.active.name,
         true,
       );
-      const mime = (file.type || "").toLowerCase();
-      const type =
-        is_voice_note || mime.startsWith("audio/")
-          ? "audio"
-          : mime.startsWith("video/")
-            ? "video"
-            : "image";
       await instagram_call(
         "send_attachment",
         {
