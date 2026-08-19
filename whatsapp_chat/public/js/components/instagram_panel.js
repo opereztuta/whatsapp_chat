@@ -11,6 +11,32 @@ function display_name(conversation) {
   return conversation.full_name || conversation.username || conversation.igsid;
 }
 
+// Instagram withholds the content of some messages entirely — GIPHYs, voice notes,
+// vanish-mode photos, shares from private accounts. There is nothing to render, so
+// the bubble has to say what was withheld rather than apologise generically.
+function instagram_placeholder(message) {
+  const labels = {
+    sticker: __("Sticker"),
+    ephemeral: __("Disappearing photo"),
+    story_mention: __("Story mention"),
+    story_reply: __("Story reply"),
+    share: __("Shared post"),
+    reel: __("Shared reel"),
+    image: __("Photo"),
+    video: __("Video"),
+    audio: __("Audio"),
+    file: __("Document"),
+    unsupported: __("Instagram could not deliver this message"),
+  };
+  // The backend names the withheld thing in attachment_error; it is more specific
+  // than anything derivable from message_type alone, so it wins when present.
+  return (
+    message.attachment_error ||
+    labels[message.message_type] ||
+    `[${message.message_type}]`
+  );
+}
+
 export default class InstagramPanel {
   constructor(opts) {
     this.$wrapper = opts.$wrapper;
@@ -401,12 +427,10 @@ export default class InstagramPanel {
     } else if (message.attachment_status === "Pending") {
       $bubble.addClass("text-muted").text(__("Attachment processing…"));
     } else if (["Failed", "Skipped"].includes(message.attachment_status)) {
-      $bubble
-        .addClass("text-muted")
-        .text(message.attachment_error || __("Attachment unavailable"));
+      $bubble.addClass("text-muted").text(instagram_placeholder(message));
     } else if (
       message.media_url &&
-      ["image", "story_mention", "story_reply", "share", "reel"].includes(
+      ["image", "story_mention", "story_reply", "share", "reel", "sticker"].includes(
         message.message_type,
       )
     ) {
@@ -458,13 +482,11 @@ export default class InstagramPanel {
           })
           .text(__("View shared Instagram post")),
       );
+    } else if (message.message) {
+      // The default branch for a plain text body — there is no earlier `text` case.
+      $bubble.text(message.message);
     } else {
-      const fallback =
-        message.message ||
-        (message.message_type === "unsupported"
-          ? __("Unsupported Instagram message")
-          : `[${message.message_type}]`);
-      $bubble.text(fallback);
+      $bubble.addClass("text-muted").text(instagram_placeholder(message));
     }
     if (message.reply_to_message_id)
       $bubble.prepend(
