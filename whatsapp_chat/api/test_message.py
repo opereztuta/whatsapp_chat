@@ -8,6 +8,7 @@ from whatsapp_chat.api.message import (
     detect_content_type,
     get_all,
     get_call_state,
+    request_contact_info,
     request_call_permission,
     send_voice_note,
     _requires_voice_note_transcode,
@@ -144,6 +145,43 @@ class TestWhatsAppChatMessageAudio(FrappeTestCase):
             "audio/webm",
             {"codec_name": "opus", "format_name": "matroska,webm"},
         ))
+
+    @patch(
+        "frappe_whatsapp.frappe_whatsapp.doctype.whatsapp_message."
+        "whatsapp_message.WhatsAppMessage._check_consent"
+    )
+    @patch(
+        "frappe_whatsapp.frappe_whatsapp.doctype.whatsapp_message."
+        "whatsapp_message.get_service_window_status",
+        return_value=(True, ""),
+    )
+    @patch(
+        "frappe_whatsapp.frappe_whatsapp.doctype.whatsapp_message."
+        "whatsapp_message.WhatsAppMessage.notify"
+    )
+    def test_request_contact_info_sends_meta_interactive_message(
+        self,
+        mock_notify,
+        _mock_service_window,
+        _mock_check_consent,
+    ):
+        account = self._create_account()
+        contact = self._create_contact()
+        contact.whatsapp_account = account.name
+        contact.save(ignore_permissions=True)
+
+        result = request_contact_info(contact.name)
+
+        self.assertTrue(result["message_name"])
+        payload = mock_notify.call_args.args[0]
+        self.assertEqual(payload["type"], "interactive")
+        self.assertEqual(
+            payload["interactive"]["type"], "request_contact_info"
+        )
+        self.assertEqual(
+            payload["interactive"]["action"]["name"],
+            "request_contact_info",
+        )
 
     @patch(
         "frappe_whatsapp.frappe_whatsapp.doctype.whatsapp_message."

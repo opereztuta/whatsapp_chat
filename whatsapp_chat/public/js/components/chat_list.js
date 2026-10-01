@@ -74,7 +74,7 @@ export default class ChatList {
     this.rooms.forEach((element) => {
       let profile = {
         user: this.user,
-        user_email: element.mobile_no,
+        user_email: element.mobile_no || element.user_id || element.parent_user_id,
         last_message: element.last_message,
         last_date: element.modified,
         is_admin: this.is_admin,
@@ -82,7 +82,7 @@ export default class ChatList {
         is_read: element.is_read,
         room_name: element.contact_name,
         room_type: element.type,
-        opposite_person_email: element.mobile_no,
+        opposite_person_email: element.mobile_no || element.user_id || element.parent_user_id,
       };
 
       this.chat_rooms.push([
@@ -256,7 +256,7 @@ export default class ChatList {
       // Build proper profile object for the new room
       const profile = {
         user: me.user,
-        user_email: res.mobile_no,
+        user_email: res.mobile_no || res.user_id || res.parent_user_id,
         last_message: res.last_message || '',
         last_date: res.modified,
         is_admin: me.is_admin,
@@ -264,7 +264,7 @@ export default class ChatList {
         is_read: res.is_read,
         room_name: res.room_name,
         room_type: 'Guest',  // WhatsApp contacts are Guest type
-        opposite_person_email: res.mobile_no,
+        opposite_person_email: res.mobile_no || res.user_id || res.parent_user_id,
       };
       me.create_new_room(profile);
     });

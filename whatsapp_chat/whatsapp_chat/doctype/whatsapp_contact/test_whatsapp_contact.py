@@ -1,9 +1,18 @@
 # Copyright (c) 2024, shridhar patil and Contributors
 # See license.txt
 
-# import frappe
+import frappe
 from frappe.tests.utils import FrappeTestCase
 
 
 class TestWhatsAppContact(FrappeTestCase):
-	pass
+    def test_bsuid_only_contact_uses_masked_display_name(self):
+        suffix = frappe.generate_hash(length=12)
+        user_id = f"US.{suffix}"
+
+        contact = frappe.get_doc({
+            "doctype": "WhatsApp Contact",
+            "user_id": user_id,
+        }).insert(ignore_permissions=True)
+
+        self.assertEqual(contact.contact_name, f"US.…{suffix[-4:]}")

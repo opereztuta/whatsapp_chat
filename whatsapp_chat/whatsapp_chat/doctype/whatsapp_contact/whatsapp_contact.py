@@ -2,6 +2,7 @@
 # For license information, please see license.txt
 
 import frappe
+import hashlib
 from frappe.model.document import Document
 
 
@@ -18,8 +19,54 @@ class WhatsAppContact(Document):
         email: DF.Link | None
         is_read: DF.Check
         last_message: DF.LongText | None
-        mobile_no: DF.Data
+        mobile_no: DF.Data | None
     # end: auto-generated types
+
+    def validate(self):
+        if not (
+            self.get("whatsapp_profile") or self.mobile_no
+            or self.get("user_id") or self.get("parent_user_id")
+        ):
+            frappe.throw("A WhatsApp identity is required.")
+        profile_name = None
+        if self.get("whatsapp_profile"):
+            profile = frappe.db.get_value(
+                "WhatsApp Profiles",
+                self.get("whatsapp_profile"),
+                [
+                    "profile_name", "username", "number", "user_id",
+                    "parent_user_id", "whatsapp_account",
+                ],
+                as_dict=True,
+            ) or {}
+            profile_name = profile.get("profile_name")
+            self.username = self.username or profile.get("username")
+            self.mobile_no = self.mobile_no or profile.get("number")
+            self.user_id = self.get("user_id") or profile.get("user_id")
+            self.parent_user_id = (
+                self.get("parent_user_id")
+                or profile.get("parent_user_id")
+            )
+            self.whatsapp_account = (
+                self.get("whatsapp_account")
+                or profile.get("whatsapp_account")
+            )
+        if not self.contact_name:
+            self.contact_name = (
+                profile_name or self.get("username") or self.mobile_no
+                or _masked_bsuid(
+                    self.get("user_id") or self.get("parent_user_id")
+                )
+            )
+        identity = (
+            self.get("whatsapp_profile") or self.get("user_id")
+            or self.get("parent_user_id") or self.mobile_no
+        )
+        raw_key = f"{self.get('whatsapp_account') or ''}:{identity}"
+        self.set(
+            "identity_key",
+            hashlib.sha256(raw_key.encode("utf-8")).hexdigest(),
+        )
 
     def after_insert(self):
         if self.email:
@@ -36,4 +83,11 @@ class WhatsAppContact(Document):
                 user=self.email
             )
 
-    pass
+
+
+def _masked_bsuid(value):
+    value = str(value or "")
+    if not value:
+        return None
+    prefix = value.split(".", 1)[0]
+    return f"{prefix}.…{value[-4:]}"

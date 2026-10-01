@@ -40,6 +40,30 @@ def _set_if_has_field(doc, fieldname: str, value: Any) -> None:
         doc.set(fieldname, value)
 
 
+def _contact_value(contact: Any, fieldname: str) -> Any:
+    getter = getattr(contact, "get", None)
+    if callable(getter):
+        return getter(fieldname)
+    return getattr(contact, fieldname, None)
+
+
+def _calling_identity_kwargs(contact: Any) -> dict[str, Any]:
+    kwargs: dict[str, Any] = {
+        "phone_number": _contact_value(contact, "mobile_no"),
+    }
+    recipient = (
+        _contact_value(contact, "user_id")
+        or _contact_value(contact, "parent_user_id")
+    )
+    optional = {
+        "recipient": recipient,
+        "contact_profile": _contact_value(contact, "whatsapp_profile"),
+        "whatsapp_account": _contact_value(contact, "whatsapp_account"),
+    }
+    kwargs.update({key: value for key, value in optional.items() if value})
+    return kwargs
+
+
 def _requires_voice_note_transcode(
         mime_type: str | None,
         metadata: dict[str, str] | None = None,
@@ -146,7 +170,7 @@ def get_all(room: str):
         WhatsAppContact,
         frappe.get_doc("WhatsApp Contact", room))
 
-    user_no = contact.mobile_no  # authoritative
+    user_no = contact.mobile_no
 
     is_voice_note_select = (
         "COALESCE(is_voice_note, 0) as is_voice_note"
@@ -154,6 +178,15 @@ def get_all(room: str):
         else "0 as is_voice_note"
     )
 
+    identity_filter = (
+        "contact_profile = %(profile)s"
+        if contact.get("whatsapp_profile")
+        else "(`to` = %(user_no)s or `from` = %(user_no)s)"
+    )
+    account_filter = (
+        "AND whatsapp_account = %(whatsapp_account)s"
+        if contact.get("whatsapp_account") else ""
+    )
     messages = frappe.db.sql(f"""
         SELECT creation,
         case
@@ -175,10 +208,15 @@ def get_all(room: str):
         COALESCE(content_type, 'text') as content_type,
         {is_voice_note_select}
         from `tabWhatsApp Message`
-        where (`to` = %(user_no)s or `from` = %(user_no)s)
+        where {identity_filter}
+          {account_filter}
           AND COALESCE(message_type, '') <> 'Template'
         order by creation asc
-    """, {"user_no": user_no}, as_dict=True)
+    """, {
+        "user_no": user_no,
+        "profile": contact.get("whatsapp_profile"),
+        "whatsapp_account": contact.get("whatsapp_account"),
+    }, as_dict=True)
 
     for message in messages:
         if message.get("content_type") != "text":
@@ -208,12 +246,13 @@ def get_call_state(room: str):
     contact = cast(
         WhatsAppContact,
         frappe.get_doc("WhatsApp Contact", room))
-    if not contact.mobile_no:
-        frappe.throw(_("This contact has no mobile number."))
+    identity_kwargs = _calling_identity_kwargs(contact)
+    if not (identity_kwargs.get("phone_number") or identity_kwargs.get("recipient")):
+        frappe.throw(_("This contact has no callable WhatsApp identity."))
 
     from frappe_whatsapp.utils.calling import get_call_state as _get_state
     return _get_state(
-        phone_number=contact.mobile_no,
+        **identity_kwargs,
         contact=room,
         agent_user=frappe.session.user,
     )
@@ -226,12 +265,13 @@ def start_call(room: str):
     contact = cast(
         WhatsAppContact,
         frappe.get_doc("WhatsApp Contact", room))
-    if not contact.mobile_no:
-        frappe.throw(_("This contact has no mobile number."))
+    identity_kwargs = _calling_identity_kwargs(contact)
+    if not (identity_kwargs.get("phone_number") or identity_kwargs.get("recipient")):
+        frappe.throw(_("This contact has no callable WhatsApp identity."))
 
     from frappe_whatsapp.utils.calling import start_outbound_call
     return start_outbound_call(
-        phone_number=contact.mobile_no,
+        **identity_kwargs,
         contact=room,
         agent_user=frappe.session.user,
     )
@@ -244,15 +284,54 @@ def request_call_permission(room: str):
     contact = cast(
         WhatsAppContact,
         frappe.get_doc("WhatsApp Contact", room))
-    if not contact.mobile_no:
-        frappe.throw(_("This contact has no mobile number."))
+    identity_kwargs = _calling_identity_kwargs(contact)
+    if not (identity_kwargs.get("phone_number") or identity_kwargs.get("recipient")):
+        frappe.throw(_("This contact has no callable WhatsApp identity."))
 
     from frappe_whatsapp.utils.calling import request_call_permission as _request
     return _request(
-        phone_number=contact.mobile_no,
+        **identity_kwargs,
         contact=room,
         agent_user=frappe.session.user,
     )
+
+
+@frappe.whitelist()
+def request_contact_info(
+    room: str,
+    message: str | None = None,
+):
+    """Ask a WhatsApp user to voluntarily share their phone number."""
+    require_contact_access(room)
+    contact = cast(
+        WhatsAppContact,
+        frappe.get_doc("WhatsApp Contact", room),
+    )
+    if not (
+        contact.mobile_no
+        or contact.get("user_id")
+        or contact.get("parent_user_id")
+    ):
+        frappe.throw(_("This contact has no messageable WhatsApp identity."))
+
+    prompt = message or _("Please share your contact information.")
+    doc = frappe.get_doc({
+        "doctype": "WhatsApp Message",
+        "to": contact.mobile_no,
+        "recipient": (
+            contact.get("user_id") or contact.get("parent_user_id")
+        ),
+        "contact_profile": contact.get("whatsapp_profile"),
+        "whatsapp_account": contact.get("whatsapp_account"),
+        "type": "Outgoing",
+        "message": prompt,
+        "content_type": "contact_request",
+    }).insert(ignore_permissions=False)
+    return {
+        "message_name": doc.name,
+        "provider_message_id": doc.message_id,
+        "content": prompt,
+    }
 
 
 def send_whatsapp_read_receipts(room):
@@ -263,17 +342,22 @@ def send_whatsapp_read_receipts(room):
             WhatsAppContact,
             frappe.get_doc("WhatsApp Contact", room))
 
-        if not contact.mobile_no:
+        if not (contact.mobile_no or contact.get("whatsapp_profile")):
             return
 
         # Find unread incoming messages for this contact
+        filters = {
+            "type": "Incoming",
+            "status": ["not in", ["marked as read"]]
+        }
+        filters[
+            "contact_profile" if contact.get("whatsapp_profile") else "from"
+        ] = contact.get("whatsapp_profile") or contact.mobile_no
+        if contact.get("whatsapp_account"):
+            filters["whatsapp_account"] = contact.get("whatsapp_account")
         unread_messages = frappe.get_all(
             "WhatsApp Message",
-            filters={
-                "from": contact.mobile_no,
-                "type": "Incoming",
-                "status": ["not in", ["marked as read"]]
-            },
+            filters=filters,
             fields=["name", "whatsapp_account"],
             order_by="creation desc",
             limit=10
@@ -325,6 +409,7 @@ def send(
         WhatsAppContact,
         frappe.get_doc("WhatsApp Contact", room))
     user_no = contact.mobile_no
+    recipient = contact.get("user_id") or contact.get("parent_user_id")
 
     resolved_content_type = "text"
     detected_mime_type = None
@@ -344,6 +429,9 @@ def send(
         frappe.get_doc({
             "doctype": "WhatsApp Message",
             "to": user_no,
+            "recipient": recipient,
+            "contact_profile": contact.get("whatsapp_profile"),
+            "whatsapp_account": contact.get("whatsapp_account"),
             "type": "Outgoing",
             "attach": attachment,
             "message": content,
@@ -361,6 +449,9 @@ def send(
         frappe.get_doc({
             "doctype": "WhatsApp Message",
             "to": user_no,
+            "recipient": recipient,
+            "contact_profile": contact.get("whatsapp_profile"),
+            "whatsapp_account": contact.get("whatsapp_account"),
             "type": "Outgoing",
             "message": content,
             "content_type": resolved_content_type,
@@ -396,6 +487,9 @@ def send_voice_note(
     doc = frappe.get_doc({
         "doctype": "WhatsApp Message",
         "to": contact.mobile_no,
+        "recipient": contact.get("user_id") or contact.get("parent_user_id"),
+        "contact_profile": contact.get("whatsapp_profile"),
+        "whatsapp_account": contact.get("whatsapp_account"),
         "type": "Outgoing",
         "attach": attachment,
         "message": "",
@@ -419,9 +513,26 @@ def last_message(doc, method):
     else:
         mobile_no = doc.get("from")
     preview = _message_preview(doc)
-
-    contact_name = frappe.db.get_value(
-        "WhatsApp Contact", filters={"mobile_no": mobile_no})
+    contact_profile = doc.get("contact_profile")
+    whatsapp_account = doc.get("whatsapp_account")
+    contact_name = None
+    candidates = []
+    if contact_profile:
+        candidates.append({
+            "whatsapp_profile": contact_profile,
+            "whatsapp_account": whatsapp_account,
+        })
+    if mobile_no:
+        candidates.append({
+            "mobile_no": mobile_no,
+            "whatsapp_account": whatsapp_account,
+        })
+        # Backward compatibility for rooms created before account linkage.
+        candidates.append({"mobile_no": mobile_no, "whatsapp_account": ["is", "not set"]})
+    for filters in candidates:
+        contact_name = frappe.db.get_value("WhatsApp Contact", filters=filters)
+        if contact_name:
+            break
     if contact_name:
         # Use set_value to avoid TimestampMismatchError from concurrent updates
         frappe.db.set_value(
@@ -441,8 +552,16 @@ def last_message(doc, method):
             frappe.get_doc({
                 "doctype": "WhatsApp Contact",
                 "mobile_no": mobile_no,
+                "whatsapp_profile": contact_profile,
+                "whatsapp_account": whatsapp_account,
+                "user_id": doc.get("from_user_id") or doc.get("recipient_user_id") or doc.get("recipient"),
+                "parent_user_id": doc.get("from_parent_user_id") or doc.get("recipient_parent_user_id"),
+                "username": doc.get("username"),
                 "last_message": preview,
-                "contact_name": mobile_no,
+                "contact_name": (
+                    doc.get("profile_name") or doc.get("username")
+                    or mobile_no
+                ),
                 "is_read": 0
             }))
         chat_doc.insert(ignore_permissions=True)
@@ -469,7 +588,7 @@ def last_message(doc, method):
         "creation": now(),
         "room": chat_doc.name,
         "contact_name": chat_doc.contact_name,
-        "sender_user_no": mobile_no,
+        "sender_user_no": mobile_no or doc.get("from_user_id"),
         "user": "Guest",
         "content_type": content_type,
         "caption": caption,
