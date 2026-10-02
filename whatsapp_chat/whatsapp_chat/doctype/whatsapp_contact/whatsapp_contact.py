@@ -17,9 +17,15 @@ class WhatsAppContact(Document):
 
         contact_name: DF.Data | None
         email: DF.Link | None
+        identity_key: DF.Data | None
         is_read: DF.Check
         last_message: DF.LongText | None
         mobile_no: DF.Data | None
+        parent_user_id: DF.Data | None
+        user_id: DF.Data | None
+        username: DF.Data | None
+        whatsapp_account: DF.Link | None
+        whatsapp_profile: DF.Link | None
     # end: auto-generated types
 
     def validate(self):
