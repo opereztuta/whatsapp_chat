@@ -3,6 +3,11 @@
 
 import frappe
 from frappe.tests.utils import FrappeTestCase
+from typing import cast
+
+from whatsapp_chat.whatsapp_chat.doctype.whatsapp_contact.whatsapp_contact import (
+    WhatsAppContact,
+)
 
 
 class TestWhatsAppContact(FrappeTestCase):
@@ -10,9 +15,12 @@ class TestWhatsAppContact(FrappeTestCase):
         suffix = frappe.generate_hash(length=12)
         user_id = f"US.{suffix}"
 
-        contact = frappe.get_doc({
-            "doctype": "WhatsApp Contact",
-            "user_id": user_id,
-        }).insert(ignore_permissions=True)
+        contact = cast(
+            WhatsAppContact,
+            frappe.get_doc({
+                "doctype": "WhatsApp Contact",
+                "user_id": user_id,
+            }).insert(ignore_permissions=True),
+        )
 
         self.assertEqual(contact.contact_name, f"US.…{suffix[-4:]}")

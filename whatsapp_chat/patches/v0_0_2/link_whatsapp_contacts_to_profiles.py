@@ -1,8 +1,13 @@
 from __future__ import annotations
 
 import hashlib
+from typing import cast
 
 import frappe
+
+from whatsapp_chat.whatsapp_chat.doctype.whatsapp_contact.whatsapp_contact import (
+    WhatsAppContact,
+)
 
 from frappe_whatsapp.utils.identity import (
     alias_key,
@@ -28,7 +33,10 @@ def execute() -> None:
             _link_unscoped_contact(contact, number)
             continue
 
-        source = frappe.get_doc("WhatsApp Contact", contact.name)
+        source = cast(
+            WhatsAppContact,
+            frappe.get_doc("WhatsApp Contact", contact.name),
+        )
         for index, account in enumerate(accounts):
             profile = _profile_for_account(
                 account=account,
@@ -51,7 +59,7 @@ def execute() -> None:
             if index == 0:
                 target = source
             else:
-                target = frappe.copy_doc(source)
+                target = cast(WhatsAppContact, frappe.copy_doc(source))
                 target.name = None
             target.whatsapp_account = account
             target.whatsapp_profile = profile

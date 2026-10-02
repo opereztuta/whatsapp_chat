@@ -187,7 +187,7 @@ def get_all(room: str):
         "AND whatsapp_account = %(whatsapp_account)s"
         if contact.get("whatsapp_account") else ""
     )
-    messages = frappe.db.sql(f"""
+    raw_messages = frappe.db.sql(f"""
         SELECT creation,
         case
           when `to` <> '' then `to`
@@ -217,6 +217,7 @@ def get_all(room: str):
         "profile": contact.get("whatsapp_profile"),
         "whatsapp_account": contact.get("whatsapp_account"),
     }, as_dict=True)
+    messages = cast(list[dict[str, Any]], raw_messages)
 
     for message in messages:
         if message.get("content_type") != "text":
@@ -315,18 +316,21 @@ def request_contact_info(
         frappe.throw(_("This contact has no messageable WhatsApp identity."))
 
     prompt = message or _("Please share your contact information.")
-    doc = frappe.get_doc({
-        "doctype": "WhatsApp Message",
-        "to": contact.mobile_no,
-        "recipient": (
-            contact.get("user_id") or contact.get("parent_user_id")
-        ),
-        "contact_profile": contact.get("whatsapp_profile"),
-        "whatsapp_account": contact.get("whatsapp_account"),
-        "type": "Outgoing",
-        "message": prompt,
-        "content_type": "contact_request",
-    }).insert(ignore_permissions=False)
+    doc = cast(
+        WhatsAppMessage,
+        frappe.get_doc({
+            "doctype": "WhatsApp Message",
+            "to": contact.mobile_no,
+            "recipient": (
+                contact.get("user_id") or contact.get("parent_user_id")
+            ),
+            "contact_profile": contact.get("whatsapp_profile"),
+            "whatsapp_account": contact.get("whatsapp_account"),
+            "type": "Outgoing",
+            "message": prompt,
+            "content_type": "contact_request",
+        }).insert(ignore_permissions=False),
+    )
     return {
         "message_name": doc.name,
         "provider_message_id": doc.message_id,

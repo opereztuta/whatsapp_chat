@@ -1,8 +1,13 @@
 from types import SimpleNamespace
+from typing import Any, cast
 from unittest.mock import patch
 
 import frappe
 from frappe.tests.utils import FrappeTestCase
+
+from frappe_whatsapp.frappe_whatsapp.doctype.whatsapp_message.whatsapp_message import (
+    WhatsAppMessage,
+)
 
 from whatsapp_chat.api.message import (
     detect_content_type,
@@ -80,7 +85,7 @@ class TestWhatsAppChatMessageAudio(FrappeTestCase):
         frappe.set_user("Administrator")
         frappe.reload_doc("frappe_whatsapp", "doctype", "whatsapp_message")
 
-    def _create_contact(self):
+    def _create_contact(self) -> Any:
         suffix = frappe.generate_hash(length=8)
         return frappe.get_doc({
             "doctype": "WhatsApp Contact",
@@ -88,7 +93,7 @@ class TestWhatsAppChatMessageAudio(FrappeTestCase):
             "mobile_no": f"1555{suffix[:7]}",
         }).insert(ignore_permissions=True)
 
-    def _create_account(self):
+    def _create_account(self) -> Any:
         suffix = frappe.generate_hash(length=8)
         return frappe.get_doc({
             "doctype": "WhatsApp Account",
@@ -101,7 +106,9 @@ class TestWhatsAppChatMessageAudio(FrappeTestCase):
             "webhook_verify_token": f"verify-{suffix}",
         }).insert(ignore_permissions=True)
 
-    def _create_file(self, *, contact, file_name="voice-note.ogg"):
+    def _create_file(
+        self, *, contact: Any, file_name: str = "voice-note.ogg"
+    ) -> Any:
         return frappe.get_doc({
             "doctype": "File",
             "file_name": file_name,
@@ -237,7 +244,10 @@ class TestWhatsAppChatMessageAudio(FrappeTestCase):
         )
         self.assertTrue(message_name)
 
-        message_doc = frappe.get_doc("WhatsApp Message", message_name)
+        message_doc = cast(
+            WhatsAppMessage,
+            frappe.get_doc("WhatsApp Message", str(message_name)),
+        )
         self.assertEqual(message_doc.message, "")
         self.assertEqual(message_doc.attach, file_doc.file_url)
         if message_doc.meta.has_field("is_voice_note"):
@@ -268,11 +278,13 @@ class TestWhatsAppChatMessageAudio(FrappeTestCase):
         messages = get_all(contact.name)
         audio_messages = [
             message for message in messages
-            if message.content_type == "audio"
-            and message.content == file_doc.file_url
+            if message.get("content_type") == "audio"
+            and message.get("content") == file_doc.file_url
         ]
 
         self.assertEqual(len(audio_messages), 1)
-        self.assertEqual(audio_messages[0].caption, None)
-        self.assertEqual(audio_messages[0].attachment_mime_type, "audio/ogg")
+        self.assertEqual(audio_messages[0].get("caption"), None)
+        self.assertEqual(
+            audio_messages[0].get("attachment_mime_type"), "audio/ogg"
+        )
         self.assertEqual(audio_messages[0].get("is_voice_note"), 1)

@@ -6,6 +6,10 @@ import hashlib
 from frappe.model.document import Document
 
 
+def _optional_string(value: object) -> str | None:
+    return str(value) if value else None
+
+
 class WhatsAppContact(Document):
     # begin: auto-generated types
     # This code is auto-generated. Do not modify anything in this block.
@@ -36,24 +40,27 @@ class WhatsAppContact(Document):
             frappe.throw("A WhatsApp identity is required.")
         profile_name = None
         if self.get("whatsapp_profile"):
-            profile = frappe.db.get_value(
+            profiles = frappe.get_all(
                 "WhatsApp Profiles",
-                self.get("whatsapp_profile"),
-                [
+                filters={"name": self.get("whatsapp_profile")},
+                fields=[
                     "profile_name", "username", "number", "user_id",
                     "parent_user_id", "whatsapp_account",
                 ],
-                as_dict=True,
-            ) or {}
+                limit=1,
+            )
+            profile = profiles[0] if profiles else {}
             profile_name = profile.get("profile_name")
             self.username = self.username or profile.get("username")
             self.mobile_no = self.mobile_no or profile.get("number")
-            self.user_id = self.get("user_id") or profile.get("user_id")
-            self.parent_user_id = (
+            self.user_id = _optional_string(
+                self.get("user_id") or profile.get("user_id")
+            )
+            self.parent_user_id = _optional_string(
                 self.get("parent_user_id")
                 or profile.get("parent_user_id")
             )
-            self.whatsapp_account = (
+            self.whatsapp_account = _optional_string(
                 self.get("whatsapp_account")
                 or profile.get("whatsapp_account")
             )
