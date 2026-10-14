@@ -3,7 +3,10 @@ from whatsapp_chat.api.auth import require_chat_access, can_access_chat
 
 
 @frappe.whitelist()
-def create(contact_name, mobile_no, email):
+def create(
+    contact_name, mobile_no=None, email=None, whatsapp_profile=None,
+    whatsapp_account=None, user_id=None, parent_user_id=None, username=None,
+):
     require_chat_access()
 
     # Optional: only allow assigning to allowed agents
@@ -16,6 +19,11 @@ def create(contact_name, mobile_no, email):
         "doctype": "WhatsApp Contact",
         "contact_name": contact_name,
         "mobile_no": mobile_no,
+        "whatsapp_profile": whatsapp_profile,
+        "whatsapp_account": whatsapp_account,
+        "user_id": user_id,
+        "parent_user_id": parent_user_id,
+        "username": username,
         "email": email,
     })
     doc.insert(ignore_permissions=False)

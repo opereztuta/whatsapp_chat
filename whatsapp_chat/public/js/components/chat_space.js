@@ -9,6 +9,7 @@ import {
   get_call_state,
   start_whatsapp_call,
   request_call_permission,
+  request_contact_info,
   is_image,
   get_avatar_html,
   mark_message_read,
@@ -153,6 +154,9 @@ export default class ChatSpace {
     this.$chat_actions.addClass('chat-space-actions');
     const chat_actions_html = `
 			<div class='whatsapp-call-actions'>
+				<button type='button' class='whatsapp-contact-request-button' title='${__('Request contact information')}'>
+					${__('Request contact info')}
+				</button>
 				<button type='button' class='whatsapp-permission-button hidden disabled' title='${__('Checking call permission')}'>
 					<span class='whatsapp-permission-label'>${__('Request call permission')}</span>
 				</button>
@@ -243,6 +247,16 @@ export default class ChatSpace {
         return;
       }
       me.handle_start_call();
+    });
+
+    $('.whatsapp-contact-request-button').on('click', function () {
+      if ($(this).hasClass('disabled') || $(this).hasClass('loading')) {
+        return;
+      }
+      frappe.confirm(
+        __('Ask this WhatsApp user to share their contact information?'),
+        () => me.handle_request_contact_info()
+      );
     });
 
     $('.whatsapp-permission-button').on('click', function () {
@@ -481,6 +495,29 @@ export default class ChatSpace {
       });
     } finally {
       $button.removeClass('loading');
+    }
+  }
+
+  async handle_request_contact_info() {
+    const $button = $('.whatsapp-contact-request-button');
+    $button.addClass('loading disabled');
+    try {
+      await request_contact_info(this.profile.room);
+      frappe.show_alert({
+        message: __('Contact-information request sent.'),
+        indicator: 'green',
+      });
+    } catch (error) {
+      frappe.msgprint({
+        title: __('Could not request contact information'),
+        message: get_error_message(
+          error,
+          __('The contact-information request could not be sent.')
+        ),
+        indicator: 'red',
+      });
+    } finally {
+      $button.removeClass('loading disabled');
     }
   }
 

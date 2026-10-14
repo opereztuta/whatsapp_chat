@@ -188,6 +188,14 @@ async function request_call_permission(room) {
   return res.message;
 }
 
+async function request_contact_info(room) {
+  const res = await frappe.call({
+    method: 'whatsapp_chat.api.message.request_contact_info',
+    args: { room },
+  });
+  return res.message;
+}
+
 async function get_settings() {
   const res = await frappe.call({
     type: 'GET',
@@ -311,6 +319,7 @@ export {
   get_call_state,
   start_whatsapp_call,
   request_call_permission,
+  request_contact_info,
   get_date_from_now,
   is_date_change,
   mark_message_read,
