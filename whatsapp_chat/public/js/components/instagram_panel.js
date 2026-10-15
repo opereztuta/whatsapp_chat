@@ -319,6 +319,10 @@ export default class InstagramPanel {
       // The user may have switched threads or gone back to the list while the
       // request was in flight; those messages no longer belong on screen.
       if (this.active !== conversation || !this.$thread) return;
+      if (result.conversation) {
+        Object.assign(this.active, result.conversation);
+        this.update_composer_state();
+      }
       this.message_cursor = result.next_cursor;
       this.messages = before
         ? [...(result.items || []), ...(this.messages || [])]
@@ -533,7 +537,7 @@ export default class InstagramPanel {
           .addClass("instagram-send-error text-muted")
           .text(
             message.failure_reason ||
-              __("This Instagram attachment could not be sent."),
+              __("This Instagram message could not be sent."),
           ),
       );
     }
@@ -602,6 +606,7 @@ export default class InstagramPanel {
     const requires_claim =
       !this.config.can_manage && this.active.assigned_to !== this.config.user;
     const blocked =
+      this.active.messaging_availability?.can_attempt === false ||
       this.active.user_has_access === false ||
       requires_claim ||
       this.active.status !== "Open" ||
@@ -609,23 +614,22 @@ export default class InstagramPanel {
       this.active.is_opted_out ||
       !this.active.account_enabled ||
       !["Active", "Warning"].includes(this.active.account_health);
-    this.$thread
-      .find(".instagram-policy")
-      .text(
-        blocked
-          ? this.active.user_has_access === false
-            ? __("You no longer have access to this conversation.")
-            : requires_claim
-              ? __("Claim this conversation before replying.")
-              : this.active.is_opted_out
-                ? __("This profile is marked Do Not Contact.")
-                : __(
-                    "The Instagram 24-hour reply window is closed or the account is unavailable.",
-                  )
-          : `${__("Reply window ends")} ${format_time(
-              this.active.reply_window_expires_at,
-            )}`,
-      );
+    let policy = `${this.active.messaging_availability?.message || ""} ${__("Reply window ends")} ${format_time(
+      this.active.reply_window_expires_at,
+    )}`;
+    if (blocked) {
+      if (this.active.user_has_access === false)
+        policy = __("You no longer have access to this conversation.");
+      else if (requires_claim)
+        policy = __("Claim this conversation before replying.");
+      else if (this.active.messaging_availability?.can_attempt === false)
+        policy = this.active.messaging_availability.message;
+      else if (this.active.is_opted_out)
+        policy = __("This profile is marked Do Not Contact.");
+      else
+        policy = __("The Instagram 24-hour reply window is closed or the account is unavailable.");
+    }
+    this.$thread.find(".instagram-policy").text(policy);
     this.$thread
       .find(".instagram-actions input, .instagram-actions button")
       .prop("disabled", blocked);
@@ -705,6 +709,7 @@ export default class InstagramPanel {
       await this.load_messages();
     } catch (error) {
       $input.val(text);
+      await this.load_messages();
       this.show_error(error, __("Could not send the Instagram message."));
     }
   }
@@ -748,6 +753,7 @@ export default class InstagramPanel {
       );
       await this.load_messages();
     } catch (error) {
+      await this.load_messages();
       // VoiceRecorder owns its validation/enqueue dialog. Showing one here as
       // well produced two stacked errors for the same failed recording.
       if (!is_voice_note)
@@ -765,6 +771,7 @@ export default class InstagramPanel {
       );
       await this.load_messages();
     } catch (error) {
+      await this.load_messages();
       this.show_error(error, __("Could not send this Instagram message."));
     }
   }
@@ -825,6 +832,7 @@ export default class InstagramPanel {
           dialog.hide();
           await this.load_messages();
         } catch (error) {
+          await this.load_messages();
           this.show_error(error, __("Could not send quick replies."));
         }
       },
@@ -881,6 +889,7 @@ export default class InstagramPanel {
             dialog.hide();
             await this.load_messages();
           } catch (error) {
+            await this.load_messages();
             this.show_error(error, __("Could not share the Instagram post."));
           }
         });
@@ -904,12 +913,15 @@ export default class InstagramPanel {
       );
       await this.load_messages();
     } catch (error) {
+      await this.load_messages();
       this.show_error(error, __("Could not update the reaction."));
     }
   }
 
   setup_realtime() {
     frappe.realtime.on("instagram_chat_update", (event) => {
+      if (event.change === "messaging_availability" && this.active?.account === event.account)
+        this.load_messages();
       if (this.active && event.conversation === this.active.name)
         this.load_messages();
       if (
@@ -918,7 +930,7 @@ export default class InstagramPanel {
         event.conversation === this.active.name
       ) {
         frappe.show_alert({
-          message: __("Instagram media could not be sent."),
+          message: __("Instagram message could not be sent."),
           indicator: "red",
         });
       }

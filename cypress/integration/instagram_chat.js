@@ -77,6 +77,37 @@ describe("Native Instagram Desk Chat", () => {
     cy.get(".instagram-message-bubble img").should("not.exist");
   });
 
+  it("disables messaging and shows manager recovery guidance for a paused account", () => {
+    cy.intercept("GET", "**/frappe_instagram.api.ui.list_messages*", {
+      body: { message: { items: [], next_cursor: null, conversation: {
+        ...conversation, assigned_to: "agent@example.com",
+        messaging_availability: { status: "Paused", can_attempt: false,
+          message: "Instagram messaging is paused. Ask a manager to authorize one attempt." },
+      } } },
+    });
+    cy.get(".instagram-navbar-icon").click();
+    cy.get(".instagram-room").click();
+    cy.get(".instagram-policy").should("contain.text", "Ask a manager");
+    cy.get(".instagram-message-input").should("be.disabled");
+    cy.get(".instagram-quick").should("be.disabled");
+    cy.get(".instagram-send").should("have.class", "disabled");
+  });
+
+  it("preserves the draft when a text send returns a recorded provider failure", () => {
+    cy.intercept("GET", "**/frappe_instagram.api.ui.list_conversations*", {
+      body: { message: { items: [{ ...conversation, assigned_to: "agent@example.com" }], next_cursor: null } },
+    });
+    cy.intercept("POST", "**/frappe_instagram.api.ui.send_text*", {
+      body: { message: { name: "FAILED-TEXT", status: "failed", failure_reason: "Meta restricted this account." } },
+    }).as("failedText");
+    cy.get(".instagram-navbar-icon").click();
+    cy.get(".instagram-room").click();
+    cy.get(".instagram-message-input").type("Buenos dias Niurka!{enter}");
+    cy.wait("@failedText");
+    cy.get(".instagram-message-input").should("have.value", "Buenos dias Niurka!");
+    cy.contains("Meta restricted this account.").should("be.visible");
+  });
+
   it("exposes the shared-queue and rich composer controls", () => {
     cy.get(".instagram-navbar-icon").click();
     cy.get(".instagram-room").click();
