@@ -6,7 +6,18 @@ export async function instagram_call(method, args = {}, type = "GET") {
     args,
     type,
   });
-  return response.message;
+  const result = response.message;
+  if (
+    type === "POST" &&
+    (result?.ok === false || result?.status === "failed")
+  ) {
+    throw new Error(
+      result.error?.message ||
+        result.failure_reason ||
+        __("Instagram message could not be sent.")
+    );
+  }
+  return result;
 }
 
 export function instagram_request_id() {
